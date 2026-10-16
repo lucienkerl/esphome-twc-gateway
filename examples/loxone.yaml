@@ -1,0 +1,105 @@
+##############################################################################
+# Tesla Wall Connector Gen 2 -> Loxone Wallbox function block
+#
+# Loxone side (see the README's "Loxone" section for the step-by-step):
+#   1. Wallbox block, named "Wb" (or change `block:` below).
+#   2. Virtual Text Input "TWC_API", wired to the block's API connector.
+#   3. A Loxone user "twc" with rights on that input only.
+#   4. Virtual Output "TWC" (address http://<this device>) with two
+#      Virtual Output Commands, both "send on value change":
+#        Ca -> /loxone/set?ca=<v>        Tp -> /loxone/set?tp=<v>
+#
+# That's all: Vc/Cac/Cp/Mr are pushed into the block by this device, and
+# the block's Ca/Tp outputs come back here. Wallbox Manager, PV surplus,
+# statistics and the app work as with a natively supported wallbox.
+##############################################################################
+
+substitutions:
+  miniserver_ip: 192.168.1.10
+
+esphome:
+  name: twc
+  friendly_name: Tesla Wall Connector
+
+esp32:
+  board: esp32-poe-iso # Olimex ESP32-POE-ISO; match your board
+
+# Wired and galvanically isolated is the recommended setup for a charger.
+ethernet:
+  type: LAN8720
+  mdc_pin: GPIO23
+  mdio_pin: GPIO18
+  clk_mode: GPIO17_OUT
+  phy_addr: 0
+  power_pin: GPIO12
+
+logger:
+  level: INFO
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Serves /loxone and /loxone/set (and the usual entity REST API, handy for
+# debugging). Version 1 keeps it small.
+web_server:
+  port: 80
+  version: 1
+
+uart:
+  id: twc_uart
+  tx_pin: GPIO4  # MOD-RS485 on the UEXT connector - verify for your board
+  rx_pin: GPIO36
+  baud_rate: 9600
+
+external_components:
+  - source: github://lucienkerl/esphome-twc-gateway
+    components: [twc-gateway]
+
+twc-gateway:
+  id: twc
+  uart_id: twc_uart
+  twc_id: 0xAB32
+  flow_control_pin: GPIO5 # transceiver DE/RE; omit for auto-direction boards
+  max_current: 16  # SAFETY: what your circuit and breaker can carry
+  min_current: 0
+  set_current: 0   # offer nothing until Loxone says otherwise
+
+  # If Loxone is gone for 2 minutes (no successful push, no command),
+  # fall back to 0 A. Use e.g. 6 to keep charging slowly instead.
+  setpoint_timeout: 120s
+  failsafe_current: 0
+
+  power:
+    name: "Charging Power"
+  energy:
+    name: "Energy"
+  actual_current:
+    name: "Actual Current"
+  offered_current:
+    name: "Offered Current"
+  vehicle_connected:
+    name: "Vehicle Connected"
+  charging_active:
+    name: "Charging Active"
+  allow_charging:
+    name: "Allow Charging"
+  link:
+    name: "TWC Link"
+  failsafe:
+    name: "Failsafe Active"
+  serial:
+    name: "Serial"
+  firmware_version:
+    name: "Firmware Version"
+
+  loxone:
+    miniserver: ${miniserver_ip}
+    username: twc
+    password: !secret loxone_password
+    api_input: TWC_API
+    block: Wb
+    # If your Config version doesn't take Vc through the API connector,
+    # create a Virtual Input "TWC_Vc", wire it to the block's Vc input and
+    # uncomment this - Vc is then pushed there instead:
+    # vc_input: TWC_Vc

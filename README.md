@@ -35,10 +35,13 @@ This started as a standalone Arduino application and was rewritten as an ESPHome
 - [Hardware](#hardware)
 - [Quick start: flash from your browser](#quick-start-flash-from-your-browser)
 - [Installation (ESPHome CLI)](#installation)
+- [Loxone Wallbox block](#loxone-wallbox-block)
 - [Configuration reference](#configuration-reference)
 - [Controlling and reading over REST](#controlling-and-reading-over-rest)
+- [How the current is controlled](#how-the-current-is-controlled)
 - [Understanding `state`](#understanding-state)
 - [Known limitations & safety notes](#known-limitations--safety-notes)
+- [Development](#development)
 - [Credits & related projects](#credits--related-projects)
 
 ## How it works
@@ -49,16 +52,19 @@ In its factory configuration, a Gen 2 TWC's rotary switch is set to a numbered p
 
 ## Features
 
-- **Set Current** — a controllable `number` entity for the current (in amps) offered to the connected vehicle. Reasserted in *every* heartbeat sent to the TWC (roughly once a second), not just when it changes, so the limit actually holds — see [Known limitations](#known-limitations--safety-notes) for why that matters. Set to `0` to offer no current at all.
-- **Allow Charging** — an experimental `switch` entity that sends the protocol's dedicated start/stop commands rather than relying on a `0` current limit. See the caveat below before depending on it.
-- **Vehicle Connected / Charging Active** — two `binary_sensor` entities derived from the TWC's own status reporting, so you don't have to interpret raw protocol state codes yourself. Each also has a plain numeric (`0`/`1`) `sensor` twin, since ESPHome's MQTT integration always publishes a `binary_sensor` as the text `"ON"`/`"OFF"` with no way to configure that.
-- **Live measurements** — per-phase voltage and current, total actual current, instantaneous charging power (computed), lifetime energy delivered.
-- **Identification** — TWC serial number, firmware version, and (where the firmware supports it) the VIN of the connected vehicle.
-- **REST, MQTT, or Home Assistant API** — every entity above is a normal ESPHome entity. Expose it however your automation platform can consume it; this fork was built and tested against ESPHome's `web_server` REST interface specifically because it needs no broker and no HA install.
+- **Loxone Wallbox block integration** — pushes *vehicle connected*, *charging active*, *charging power* (kW) and the *meter reading* (kWh) straight into the block's API connector, and takes the block's *charging allowed* / *target power* (kW) back over one HTTP endpoint. One Virtual Text Input and one Virtual Output on the Loxone side; Wallbox Manager, PV surplus charging and statistics work as with a natively supported wallbox. See [Loxone Wallbox block](#loxone-wallbox-block).
+- **Set Current** — a `number` entity for the current (in amps) offered to the vehicle. Values between 0 and 6 A are raised to 6 A, anything above `max_current` is capped, and the entity always shows what is *actually* offered.
+- **Allow Charging** — a `switch` that offers 0 A while off. Optionally (`use_start_stop_commands`) it also sends the protocol's dedicated start/stop frames.
+- **Setpoint watchdog** — if nothing has commanded the gateway for `setpoint_timeout`, it falls back to `failsafe_current` until a controller is back. With the Loxone push enabled, every successful round trip to the Miniserver counts as "alive".
+- **Link supervision** — a TWC that stops answering for 26 s is dropped (as a real primary does) and every value is reset, instead of showing "charging at 16 A" from a wallbox that has lost power. A `link` binary sensor shows the state.
+- **Vehicle Connected / Charging Active** — derived from the TWC's plug-state query and heartbeat, so you don't have to interpret raw state codes. Each has a numeric `0`/`1` twin for MQTT.
+- **Live measurements** — charging power (kW, computed), per-phase voltage and current, actual and offered current, a meter reading with Wh resolution (`energy`), and the TWC's own lifetime kWh counter.
+- **Identification** — serial number, firmware version, and (firmware permitting) the connected vehicle's VIN.
+- **REST, MQTT, or Home Assistant API** — every entity is a normal ESPHome entity.
 
 ## Hardware
 
-You need an ESP32 (any variant with a free UART) and an RS-485 transceiver wired to the TWC's D+/D− terminals, plus a GPIO controlling the transceiver's driver-enable (DE/RE) pin for half-duplex switching. A few things that matter in practice, learned the hard way:
+You need an ESP32 (any variant with a free UART) and an RS-485 transceiver wired to the TWC's D+/D− terminals, plus — unless the transceiver switches direction by itself — a GPIO controlling its driver-enable (DE/RE) pin for half-duplex switching. A few things that matter in practice, learned the hard way:
 
 - **Level shifting.** The common red "MAX485 TTL to RS485" breakout is a 5 V part. Its receive output (RO) will drive ~5 V into an ESP32 GPIO, which is not 5 V-tolerant. Use a 3.3 V-native transceiver (MAX3485 / SP3485 / SN65HVD75) instead, or a module built for 3.3 V.
 - **Galvanic isolation.** The TWC sits next to mains/EV-charging voltages. Prefer an isolated ESP32 board (e.g. Olimex ESP32-POE-**ISO**) powered independently (PoE is ideal), or an isolated transceiver, so your control electronics don't share a ground reference with the wallbox.
@@ -66,6 +72,7 @@ You need an ESP32 (any variant with a free UART) and an RS-485 transceiver wired
 - **Bench-test first.** An M5 Atom Lite + RS-485 base (or any small dev board) is a fine way to validate wiring and see real frames in the logs before committing to a permanent, isolated install.
 
 Boards known to work: Olimex ESP32-POE / ESP32-POE-ISO with a MOD-RS485, and M5Stack Atom Lite with the Atomic RS485 Base. Any ESP32 + 3.3 V RS-485 transceiver combination should work equally well.
+
 
 ## Quick start: flash from your browser
 
@@ -97,17 +104,13 @@ wifi:
   password: !secret wifi_password
 
 logger:
-  level: DEBUG
-
-api:
-  reboot_timeout: 0s # required: without a Home Assistant client, ESPHome
-                      # would otherwise reboot this device every 15 minutes
+  level: INFO
 
 ota:
   - platform: esphome
 
-# REST interface for Loxone (or anything else that can make an HTTP request).
-# version: 1 is deliberately minimal - v2/v3 pull in a full web UI you don't need here.
+# REST interface (entity URLs, plus /loxone and /loxone/set).
+# version: 1 is deliberately minimal - v2/v3 pull in a full web UI.
 web_server:
   port: 80
   version: 1
@@ -116,129 +119,103 @@ uart:
   id: twc_uart
   # GPIO19 (TX) / GPIO22 (RX) are confirmed working for an M5Stack Atom Lite
   # with the Atomic RS485 Base - M5's own pinout docs are ambiguous here, so
-  # this was verified empirically (pulse-counting each candidate GPIO while
-  # the TWC's linkready frames were on the bus). Different board, different
-  # pins - check yours before assuming these apply.
+  # this was verified empirically. Different board, different pins.
   tx_pin: GPIO19
   rx_pin: GPIO22
   baud_rate: 9600
-  data_bits: 8
-  parity: NONE
-  stop_bits: 1
 
 external_components:
   - source: github://lucienkerl/esphome-twc-gateway
     components: [twc-gateway]
-    refresh: 0s # avoid ESPHome's day-long cache while you're iterating;
-                # widen this once your setup is stable
 
 twc-gateway:
   id: twc
   uart_id: twc_uart
   twc_id: 0xAB32          # this device's fake TWC ID - must not collide
                            # with a real TWC's ID on the bus
-  flow_control_pin: GPIO33 # DE/RE pin of your RS-485 transceiver. A board
-                            # whose transceiver switches direction itself
-                            # (e.g. the Atomic RS485 Base) doesn't use this
-                            # pin electrically, but the option is required -
-                            # point it at any otherwise-unused GPIO. On a
-                            # board like the Olimex MOD-RS485 this pin is
-                            # real and must go to the transceiver's DE/RE.
-  min_current: 0           # 0 is a valid "offer nothing" value; 1-5 A are not
-                            # valid in the protocol and get clamped up to 6
-  max_current: 16           # hard ceiling - set this to what your circuit
-                             # can actually deliver, see the warning above
-  set_current: 6             # initial value after boot, before anything
-                              # else has written to the number entity
+  flow_control_pin: GPIO33 # DE/RE pin of your RS-485 transceiver. Omit it
+                            # for a transceiver that switches direction by
+                            # itself (e.g. the Atomic RS485 Base).
+  min_current: 0           # 0 = "offer nothing" is a valid setting
+  max_current: 16          # hard ceiling - what your circuit can deliver
+  set_current: 6           # offered after boot until something writes it
 
-  current:
-    name: "Charging Current"       # sum of actual current across all
-                                    # connected TWCs (A)
+  setpoint_timeout: 120s   # optional watchdog, see below
+  failsafe_current: 0
+
+  power:
+    name: "Charging Power"         # kW
+  energy:
+    name: "Energy"                 # kWh, Wh resolution
   actual_current:
-    name: "Actual Current"         # actual current of this connector (A)
-  max_allowable_current:
-    name: "Maximum Allowable Current" # the TWC's own reported hardware max
-  state:
-    name: "State"                  # raw protocol status code, see below
-  total_kwh_delivered:
-    name: "Total kWh Delivered"
-  serial:
-    name: "Serial"
-  firmware_version:
-    name: "Firmware Version"
-  connected_vin:
-    name: "Connected VIN"
-  phase_1_voltage:
-    name: "Phase 1 Voltage"
-  phase_2_voltage:
-    name: "Phase 2 Voltage"
-  phase_3_voltage:
-    name: "Phase 3 Voltage"
-  phase_1_current:
-    name: "Phase 1 Current"
-  phase_2_current:
-    name: "Phase 2 Current"
-  phase_3_current:
-    name: "Phase 3 Current"
-
-  allow_charging:
-    name: "Allow Charging"     # experimental, see below
-
+    name: "Actual Current"
+  offered_current:
+    name: "Offered Current"
   vehicle_connected:
     name: "Vehicle Connected"
   charging_active:
     name: "Charging Active"
-  vehicle_connected_numeric:
-    name: "Vehicle Connected Numeric"   # same value as vehicle_connected,
-  charging_active_numeric:              # as a plain 0/1 sensor for MQTT
-    name: "Charging Active Numeric"
+  allow_charging:
+    name: "Allow Charging"
+  link:
+    name: "TWC Link"
+  state:
+    name: "State"
+  serial:
+    name: "Serial"
+  firmware_version:
+    name: "Firmware Version"
 ```
 
-### Computing charging power in kW
+Every entity is optional; configure only what you use. [`examples/loxone.yaml`](examples/loxone.yaml) is a complete configuration for a wired, isolated Loxone installation.
 
-There's no `power` sensor built in, since it's just voltage × current per phase, computed the same way regardless of what this component exposes. Give the three voltage and three current sensors above an `id:` each, then add a `template` sensor:
+## Loxone Wallbox block
+
+The Loxone *Wallbox* function block wants four values from a third-party wallbox — **Vc** (vehicle connected), **Cac** (charging active), **Cp** (charging power, kW) and **Mr** (meter reading, kWh) — and produces **Ca** (charging allowed) and **Tp** (target charging power, kW). This component speaks exactly that:
+
+```
+ESP -> Miniserver   GET /dev/sps/io/TWC_API/SET(Wb;Vc;1)&SET(Wb;Cac;1)&SET(Wb;Cp;7.36)&SET(Wb;Mr;1234.567)
+                    (on every change, at most every min_interval; plus a keepalive)
+Miniserver -> ESP   GET http://<esp>/loxone/set?ca=1
+                    GET http://<esp>/loxone/set?tp=7.4      (kW - converted to amps here)
+```
+
+### Loxone Config
+
+1. Place a **Wallbox** block and name it `Wb` (or set `block:` to its name). Set its *Max. charging power* to `max_current × 3 × 230 V` (16 A → 11 kW) and leave *Min. charging power* at 4.16 kW (6 A × 3 × 230 V); for a single-phase car the minimum is 1.38 kW.
+2. Create a **Virtual Text Input** `TWC_API` and connect it to the block's **API** connector.
+3. Create a **user** (e.g. `twc`) and give it rights on `TWC_API` only.
+4. Create a **Virtual Output** with address `http://<esp-ip>` and two **Virtual Output Commands**, each sent on value change:
+   - connected to **Ca**: command `/loxone/set?ca=<v>`
+   - connected to **Tp**: command `/loxone/set?tp=<v>`
+5. On the ESP:
 
 ```yaml
 twc-gateway:
   # ...
-  phase_1_voltage:
-    name: "Phase 1 Voltage"
-    id: twc_v1
-  phase_2_voltage:
-    name: "Phase 2 Voltage"
-    id: twc_v2
-  phase_3_voltage:
-    name: "Phase 3 Voltage"
-    id: twc_v3
-  phase_1_current:
-    name: "Phase 1 Current"
-    id: twc_i1
-  phase_2_current:
-    name: "Phase 2 Current"
-    id: twc_i2
-  phase_3_current:
-    name: "Phase 3 Current"
-    id: twc_i3
-
-sensor:
-  - platform: template
-    name: "Charging Power"
-    unit_of_measurement: "kW"
-    device_class: power
-    state_class: measurement
-    accuracy_decimals: 2
-    update_interval: 5s
-    lambda: |-
-      auto v = [](esphome::sensor::Sensor *s) -> float {
-        return std::isnan(s->state) ? 0.0f : s->state;
-      };
-      float p = v(id(twc_v1)) * v(id(twc_i1))
-              + v(id(twc_v2)) * v(id(twc_i2))
-              + v(id(twc_v3)) * v(id(twc_i3));
-      return p / 1000.0f;
+  setpoint_timeout: 120s  # no Miniserver for 2 min -> failsafe_current
+  failsafe_current: 0
+  loxone:
+    miniserver: 192.168.1.10   # IPv4 address
+    username: twc
+    password: !secret loxone_password
+    api_input: TWC_API
+    block: Wb
 ```
 
-The `std::isnan` guard matters: every sensor reads NAN until its first real value arrives after boot, and one NAN in the sum turns the whole result into NAN.
+`loxone:` needs `web_server:` (or at least `web_server_base:`) for its endpoints. With `loxone: {}` and no `miniserver`, only the endpoints are served (no push) — the browser-flash firmware does exactly that.
+
+**Known Loxone quirks.** A Virtual Text Input only reacts when its text changes, so the keepalive briefly blanks it before re-sending. Some Config versions are reported not to apply **Vc** through the API connector; if the block doesn't see the car, create a Virtual Input `TWC_Vc`, wire it to the block's Vc input and set `vc_input: TWC_Vc` — Vc is then pushed there instead. Block outputs cannot be read through the API connector, which is why Ca/Tp come back via the Virtual Output.
+
+**kW → A.** `Tp` is converted with the *nominal* voltage (`nominal_voltage`, 230 V) — the same assumption Loxone uses for its own min/max power — and the number of phases the car is actually drawing on (`phases`, 3, until the power status shows otherwise), rounded to whole amps. Below 6 A the gateway offers 0 A.
+
+**Pull instead of push.** `GET /loxone` returns all values on one line, for a single Virtual HTTP Input with command recognition (`vc=\v`, `cp=\v`, …):
+
+```
+vc=1;cac=1;cp=7.36;mr=1234.567;a=10.65;offer=11;set=11;ca=1;st=1;ps=1;link=1;failsafe=0;ms=1
+```
+
+`a` actual current, `offer` currently offered amps, `set` requested amps, `ca` charging allowed, `st` vehicle state, `ps` plug state, `link` TWC linked, `failsafe` watchdog expired, `ms` last push to the Miniserver succeeded.
 
 ## Configuration reference
 
@@ -246,117 +223,115 @@ The `std::isnan` guard matters: every sensor reads NAN until its first real valu
 
 | Option | Default | Description |
 |---|---|---|
-| `id` | — | Entity ID for this instance (also the `number` entity itself). |
-| `uart_id` | — | The `uart:` bus wired to the RS-485 transceiver. |
-| `flow_control_pin` | *required* | GPIO driving the transceiver's DE/RE (direction control) pin. |
+| `id` | — | ID of this instance (also the `number` entity). |
+| `uart_id` | — | The `uart:` bus wired to the RS-485 transceiver (9600 8N1). |
+| `flow_control_pin` | — | GPIO driving the transceiver's DE/RE pin. Omit for auto-direction transceivers. |
 | `twc_id` | `0xABCD` | The fake TWC ID this device presents. Must be unique on the bus. |
-| `min_current` | `6` | Lower bound offered to the vehicle. `0` is valid (offers nothing); `1`-`5` are not valid in the protocol and are clamped up to `min_current`. |
-| `max_current` | `32` | Upper bound offered to the vehicle. This is the *only* limit left once the TWC's rotary switch is in slave mode — set it to what your wiring can actually carry. |
-| `set_current` | — | Value the `number` entity starts at before anything else writes to it. |
-| `passive_mode` | `0` | If `1`, this device never announces itself as a master and never sends control commands — it only listens and reports what it observes. Useful for monitoring a TWC that already has a real master, without risking interference. |
+| `min_current` | `6` | Lower bound of the number entity. `0` allows "offer nothing"; `1`–`5` are rejected, the protocol has no valid value there. |
+| `max_current` | `32` | Upper bound. The *only* limit left once the TWC is a secondary — set it to what your wiring can carry. The TWC's own reported maximum is applied on top. |
+| `set_current` | `min_current` | Offered after boot until something writes the number entity. |
+| `setpoint_timeout` | `0s` (off) | If no command (number, switch, `/loxone/set`, successful Loxone push) arrives for this long, offer `failsafe_current`. Counted from boot. |
+| `failsafe_current` | `0` | Current offered while the watchdog has expired. |
+| `min_on_time` | `60s` | Once a car is drawing, keep offering at least 6 A this long before going to 0 A (relay protection, as TWCManager does). |
+| `min_off_time` | `30s` | After going to 0 A, wait this long before offering current again. |
+| `use_start_stop_commands` | `false` | Also send the protocol's START/STOP_CHARGING frames when the offer goes above/to 0 A. Experimental. |
+| `reassert_current` | `false` | Send the current limit in every heartbeat instead of until the TWC confirms it (the pre-2.0 behaviour). |
+| `query_vin` | `true` | Ask the TWC for the connected VIN every 30 s. |
+| `phases` | `3` | Phases assumed for kW ↔ A until the car shows how many it uses. |
+| `nominal_voltage` | `230` | Per-phase voltage for the kW → A conversion. |
+| `passive_mode` | `false` | Never transmit; only listen to a TWC that already has a real primary. |
+| `loxone` | — | Loxone Wallbox block bridge, see above. Options: `miniserver`, `port` (80), `username`, `password`, `api_input`, `block` (`Wb`), `vc_input`, `min_interval` (5 s), `keepalive` (30 s), `feed_watchdog` (true). |
 
 ### Entities
 
 | Config key | Entity type | Notes |
 |---|---|---|
-| *(the `twc-gateway:` block itself)* | `number` | The controllable current offered to the vehicle, in amps. |
-| `allow_charging` | `switch` | Experimental — see [Known limitations](#known-limitations--safety-notes). |
-| `current` | `sensor` | Sum of actual current across every connected TWC (A). |
-| `actual_current` | `sensor` | Actual current of this connector specifically (A). Identical to `current` when only one TWC is linked. |
-| `max_allowable_current` | `sensor` | The TWC's own reported hardware maximum (A), from its presence announcement — not your configured `max_current`. |
-| `state` | `sensor` | Raw protocol status byte. See [Understanding `state`](#understanding-state) before using it directly. |
-| `total_kwh_delivered` | `sensor` | Lifetime energy delivered by the TWC (kWh). |
+| *(the `twc-gateway:` block itself)* | `number` | Requested current in amps; shows the clamped value. |
+| `allow_charging` | `switch` | Off = offer 0 A. Restored after reboot. |
+| `power` | `sensor` | Charging power in kW (actual current × voltage of the phases in use). |
+| `energy` | `sensor` | Meter reading in kWh with Wh resolution; integrated power, kept within 1 kWh of the TWC's counter and persisted across reboots. |
+| `total_kwh_delivered` | `sensor` | The TWC's own lifetime counter (whole kWh). |
+| `actual_current` | `sensor` | Current the car draws (A, 0.01 A resolution). |
+| `current` | `sensor` | Same as `actual_current` (kept for older configs). |
+| `offered_current` | `sensor` | Current offered to the car right now, after watchdog, switch and min on/off time. |
+| `max_allowable_current` | `sensor` | The TWC's own hardware maximum (A). |
 | `phase_1/2/3_voltage` | `sensor` | Per-phase voltage (V). |
-| `phase_1/2/3_current` | `sensor` | Per-phase current (A). |
-| `serial` | `text_sensor` | TWC serial number. |
-| `firmware_version` | `text_sensor` | TWC firmware version. |
-| `connected_vin` | `text_sensor` | VIN of the connected vehicle, where the firmware reports it (Tesla only, firmware-dependent). |
-| `vehicle_connected` | `binary_sensor` | Derived — see below. Published over MQTT as `"ON"`/`"OFF"`. |
-| `charging_active` | `binary_sensor` | Derived — see below. Published over MQTT as `"ON"`/`"OFF"`. |
-| `vehicle_connected_numeric` | `sensor` | Same value as `vehicle_connected`, as a plain `0`/`1` for MQTT consumers that want a number instead of `"ON"`/`"OFF"`. |
-| `charging_active_numeric` | `sensor` | Same value as `charging_active`, as a plain `0`/`1`. |
+| `phase_1/2/3_current` | `sensor` | Per-phase current (A, 0.5 A steps). |
+| `state` | `sensor` | Vehicle state code, see below. |
+| `vehicle_connected` / `charging_active` | `binary_sensor` | Derived, see below. |
+| `vehicle_connected_numeric` / `charging_active_numeric` | `sensor` | Same as `0`/`1`. |
+| `link` | `binary_sensor` | TWC linked and answering. |
+| `failsafe` | `binary_sensor` | Setpoint watchdog expired, `failsafe_current` is offered. |
+| `serial` / `firmware_version` / `connected_vin` | `text_sensor` | Identification. VIN is `0` when no car (or no VIN) is reported. |
 
 ## Controlling and reading over REST
 
-With `web_server: version: 1` configured, every entity above is reachable at `http://<ip>/<domain>/<Entity Name>`, where `<Entity Name>` is exactly the `name:` you gave it in YAML, URL-encoded (spaces become `%20`). This is the interface Loxone's Virtual HTTP Input/Output blocks talk to directly — no MQTT broker, no Home Assistant, no extra service in between.
+With `web_server: version: 1`, every entity is at `http://<ip>/<domain>/<Entity Name>` (URL-encoded name):
 
 | Purpose | Request |
 |---|---|
-| Read current setpoint | `GET /number/Set%20Current` |
 | Set current setpoint | `POST /number/Set%20Current/set?value=10` |
-| Read actual current | `GET /sensor/Actual%20Current` |
-| Read charging state | `GET /switch/Allow%20Charging` |
-| Stop charging | `GET` or `POST /switch/Allow%20Charging/turn_off` |
-| Resume charging | `GET` or `POST /switch/Allow%20Charging/turn_on` |
-| Vehicle connected? | `GET /binary_sensor/Vehicle%20Connected` |
-| Currently charging? | `GET /binary_sensor/Charging%20Active` |
-| Vehicle connected? (as 0/1) | `GET /sensor/Vehicle%20Connected%20Numeric` |
-| Currently charging? (as 0/1) | `GET /sensor/Charging%20Active%20Numeric` |
+| Stop / resume charging | `POST /switch/Allow%20Charging/turn_off` / `turn_on` |
+| Read power | `GET /sensor/Charging%20Power` |
+| Everything at once | `GET /loxone` (needs `loxone:`) |
+| Allow + power target (kW) | `GET /loxone/set?ca=1&tp=7.4` (needs `loxone:`) |
+| Current in amps | `GET /loxone/set?a=10` (needs `loxone:`) |
 
-Responses are JSON, e.g. `{"id":"number-set_current","value":10.0,"state":"10.0 A"}` or `{"id":"switch-allow_charging","value":true,"state":"ON"}`. In Loxone, a Virtual HTTP Input polling one of the `GET` URLs with command recognition on `"value":` or `"state":"` gets you the number; a Virtual Output's *Command on ON* field takes the `set`/`turn_on`/`turn_off` URL directly.
+## How the current is controlled
 
-One important difference between the two entity types: `POST` is **required** for `/number/.../set` because the value travels in the query string on a URL with an action segment. The `switch` actions (`turn_on`/`turn_off`/`toggle`) take no value and accept plain `GET`, so no extra configuration is needed on the Loxone side for those.
+The gateway acts as the TWC's primary and sends it a heartbeat once a second. Following TWCManager's findings:
 
-**Re-send your setpoint periodically.** Every heartbeat this device sends to the TWC already carries the current `number` value, roughly once a second — so once Loxone has set a value, it stays in effect without being re-sent. There is, however, no watchdog: if Loxone (or your automation logic) stops updating the setpoint entirely, the TWC keeps charging at whatever was last configured, indefinitely. If your control logic can fail silently, have it re-publish the setpoint periodically anyway, and treat the absence of updates as something to alarm on.
+- **0 A goes out as command `0x05`**, never as `0x09` with 0 A — the latter makes the TWC bounce between states 01 and 03 and click its relay every second.
+- **A non-zero limit is sent as `0x09` until the TWC echoes it** in its own heartbeat (and again while it reports state 08, "starting"); after that the heartbeat carries "no change". Set `reassert_current: true` to send it every time instead.
+- Between two heartbeats exactly one other frame goes out: start/stop (if enabled and changed), the plug-state query (every 3 s), the power-status query (every 5 s), serial/firmware (until known), VIN (every 30 s).
+- Protocol version 1 TWCs (7-byte heartbeats) are detected and get `0x05` for every limit.
+- Everything runs in ESPHome's main loop as a non-blocking state machine — no extra FreeRTOS task, no `delay()`.
 
 ## Understanding `state`
 
-The `state` sensor is the raw status byte the TWC reports in its heartbeat. Per the community protocol notes (TWCManager's `TWCSlave.py`):
+The `state` sensor is the vehicle state from the TWC's heartbeat (per TWCManager's `TWCSlave.py`). State `9` — the TWC's echo of our own `0x09` command — is filtered out, so the sensor shows the last real state:
 
 | Code | Meaning |
 |---|---|
-| 0 | Ready. Vehicle may or may not be plugged in — this code alone doesn't tell you. |
+| 0 | Ready. Car may or may not be plugged in. |
 | 1 | Plugged in, charging. |
 | 2 | Error (e.g. heartbeat timeout from the master). |
-| 3 | Plugged in, not charging. Doesn't reliably stay set — not safe to use alone as a "charge complete" signal. |
+| 3 | Plugged in, not charging (doesn't reliably stay set). |
 | 4 | Plugged in, ready to charge or charge scheduled. |
-| 5 | Busy — typically appears for about a second and can interrupt any other state. |
-| 8 | Starting to charge (ramping up). |
-| 9 | **Not an independent status.** Protocol v2 echoes the command type the master just sent (this device sends command `0x09`, current limit, in every heartbeat) as an acknowledgement. Expect to see `9` almost continuously — it does not mean anything changed with the vehicle. |
-| 0x0A | Amp adjustment period complete (follow-up to states 6/7). |
-
-Because raw `state` alone can't reliably answer "is a car connected?" or "is it charging?" — code `0` is explicitly ambiguous, code `9` is now near-constant, and a fully charged car settles back into `0` while still plugged in — the `vehicle_connected` and `charging_active` binary sensors are computed instead of exposing this byte directly:
+| 5 | Busy (about a second at a time). |
+| 8 | Starting to charge. |
+| 0x0A | Amp adjustment period complete. |
 
 ```
-charging_active = state in {1, 8}  OR  actual_current > 0
+charging_active   = state in {1, 8}  OR  actual_current >= 1 A
+vehicle_connected = plug_state != 0            (once GET_PLUG_STATE has answered)
+                  = charging_active OR state in {3, 4}   (before that)
 ```
 
-For `vehicle_connected`, this component also queries the protocol's separate `GET_PLUG_STATE` command (not exposed as its own sensor, since it's specifically about disambiguating this one question) periodically in the background. Unlike the heartbeat's `state`, its answer is unambiguous — `0` genuinely means unplugged, not "unplugged or just idle". Once the first response has come back:
+Some TWCs report ~0.25 A while idle, hence the 1 A threshold.
 
-```
-vehicle_connected = plug_state != 0
-```
+### Logs
 
-Before that first response (briefly, after boot or a fresh link), it falls back to:
-
-```
-vehicle_connected = charging_active  OR  state in {3, 4}
-```
-
-which is the same heuristic used before `GET_PLUG_STATE` was wired up, and is why the fallback can still misread a fully-charged-but-still-plugged-in car as disconnected if you catch it in that narrow window.
-
-### Finding state changes in the logs
-
-With `uart: debug:` enabled, every single heartbeat frame (roughly once a second per connected TWC) gets logged, which buries the state transitions you actually care about. Every real vehicle state change and every `GET_PLUG_STATE` change is also logged separately at `INFO` with a fixed, greppable prefix — `Vehicle state changed for ...` / `Plug state changed for ...` — regardless of the raw byte dump. To see only those and cut the per-heartbeat noise, drop the `uart_debug` tag down in your `logger:` config:
-
-```yaml
-logger:
-  level: DEBUG
-  logs:
-    uart_debug: WARN   # suppresses the raw >>>/<<< byte dump
-    twc-gateway.protocol: INFO # keeps the state-change lines
-```
-
-Turn `uart_debug` back up to its previous level only when you need to see the actual bytes on the wire, e.g. while debugging wiring or a new protocol command.
+Link changes, vehicle state changes (`Vehicle state changed for ...`) and plug changes (`Plug state changed for ...`) are logged at `INFO` under the `twc-gateway` tag, Loxone push problems under `twc-gateway.loxone`. To see raw bytes on the wire, add `debug:` to `uart:`.
 
 ## Known limitations & safety notes
 
-- **The protocol is reverse-engineered.** Treat every command as capable of putting the TWC into an unrecoverable state until proven otherwise on your specific hardware/firmware. Don't invent your own frames.
-- **`min_current: 0` stops the *offer*, not necessarily the vehicle.** Setting the current to `0` tells the TWC no current is available; whether the connected car reliably stops drawing power (and, more importantly, reliably *resumes* afterward without being re-plugged) depends on your vehicle and its sleep behavior. Test the stop *and* the resume before relying on this for anything time-critical.
-- **`Allow Charging` is experimental.** It uses the protocol's dedicated start/stop commands, which are less exercised in the community than the current-limit heartbeat. TWCManager — the most actively maintained fake-master implementation — has an open, years-old TODO for exactly this ("start and stop charging using protocol 2 commands... if I ever figure out how") and falls back to controlling the vehicle directly via Tesla's own API instead. Verify it does what you expect on your hardware before automating around it. Its last commanded state is restored and re-asserted on every boot (including after a crash or OTA update), not just within a running session.
-- **No watchdog.** Unlike TWCManager's MQTT `chargeNow` command (which takes a duration and expires), this component holds the last value it was given indefinitely. Build any "fail safe" behavior you need into your automation logic.
-- **1-5 A are not valid values.** The protocol only accepts `0` or `≥ 6` A. Values in between get clamped up to `min_current` — don't let a rounding error in your control logic land in that gap and assume it did what you asked.
-- **`max_current` is your only ceiling.** In slave mode, the TWC's rotary switch no longer limits anything — whatever you configure here (and only here) is what protects your wiring.
+- **The protocol is reverse-engineered.** Treat every command as capable of putting the TWC into an unrecoverable state until proven otherwise on your hardware/firmware. Don't invent your own frames.
+- **One TWC per gateway.** A second secondary on the bus is ignored with a warning. Use one gateway (and one Loxone Wallbox block) per wall connector and let Loxone's Wallbox Manager share the power.
+- **0 A stops the *offer*, not necessarily the vehicle.** Whether a car reliably resumes after a long 0 A period without being re-plugged depends on the car. Test stop *and* resume.
+- **`use_start_stop_commands` is experimental.** The frames now have the length TWCManager uses (16 bytes), but TWCManager itself still controls start/stop through the car's API. Verify before relying on it.
+- **The watchdog is off by default.** Enable `setpoint_timeout` if anything automates this device.
+- **`max_current` is your ceiling.** In secondary mode, the TWC's rotary switch no longer limits anything.
+
+## Development
+
+The protocol (`twc_frames.*`), the current policy (`twc_policy.*`) and the primary state machine (`twc_master.*`) have no ESPHome dependency and are unit-tested on the host:
+
+```sh
+make -C tests
+```
+
+CI runs those tests and compiles `tests/ci/minimal.yaml` and both examples against the checked-out component.
 
 ## Credits & related projects
 

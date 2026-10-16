@@ -1,0 +1,54 @@
+name: CI
+
+# Unit tests for the protocol/policy/state machine, plus a compile of every
+# example against the component in this checkout (not the one on main).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run host unit tests
+        run: make -C tests
+
+  compile:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - tests/ci/minimal.yaml
+          - examples/generic-portal.yaml
+          - examples/loxone.yaml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/esphome
+            ~/.platformio
+          key: esphome-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+      - name: Install ESPHome
+        run: pip install esphome
+      - name: Point the config at this checkout
+        run: |
+          mkdir -p build
+          cfg="${{ matrix.config }}"
+          out="build/$(basename "$cfg")"
+          # Replace the github:// component source with this checkout.
+          sed -E \
+            -e "s#source: github://lucienkerl/esphome-twc-gateway(@main)?#source:\n      type: local\n      path: ${GITHUB_WORKSPACE}/components#" \
+            -e "s#path: \.\./\.\./components#path: ${GITHUB_WORKSPACE}/components#" \
+            -e '/refresh: 0s/d' "$cfg" > "$out"
+          printf 'wifi_ssid: "ci"\nwifi_password: "ci-password"\nota_password: "ci"\nloxone_password: "ci"\n' > build/secrets.yaml
+          echo "CONFIG=$out" >> "$GITHUB_ENV"
+      - name: Compile
+        run: esphome compile "$CONFIG"
