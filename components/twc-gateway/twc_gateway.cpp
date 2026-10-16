@@ -214,6 +214,7 @@ void TWCGateway::publish_measurements_() {
   pub(this->actual_current_sensor_, actual);
   pub(this->current_sensor_, actual);  // single TWC: total == this connector
   pub(this->offered_current_sensor_, this->master_.offered_current());
+  pub(this->reported_current_sensor_, s.reported_max_centiamps / 100.0f);
   pub(this->power_sensor_, this->power_kw());
 
   if (s.have_power_status || !s.linked) {

@@ -77,6 +77,7 @@ class TWCGateway : public number::Number, public uart::UARTDevice, public Compon
   SUB_SENSOR(power)
   SUB_SENSOR(energy)
   SUB_SENSOR(offered_current)
+  SUB_SENSOR(reported_current)
   // Numeric (0/1) mirrors of the binary sensors, for MQTT consumers that
   // want a number instead of ESPHome's fixed "ON"/"OFF" payload.
   SUB_SENSOR(vehicle_connected_numeric)

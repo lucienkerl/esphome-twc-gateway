@@ -54,6 +54,7 @@ CONF_PHASE_3_CURRENT = "phase_3_current"
 CONF_FIRMWARE_VERSION = "firmware_version"
 CONF_ACTUAL_CURRENT = "actual_current"
 CONF_OFFERED_CURRENT = "offered_current"
+CONF_REPORTED_CURRENT = "reported_current"
 CONF_VIN = "connected_vin"
 CONF_PASSIVE_MODE = "passive_mode"
 
@@ -124,6 +125,7 @@ TYPES = [
     CONF_PHASE_3_CURRENT,
     CONF_ACTUAL_CURRENT,
     CONF_OFFERED_CURRENT,
+    CONF_REPORTED_CURRENT,
     CONF_POWER,
     CONF_ENERGY,
     CONF_VEHICLE_CONNECTED_NUMERIC,
@@ -296,6 +298,9 @@ CONFIG_SCHEMA = cv.All(
             ),
             cv.Optional(CONF_ACTUAL_CURRENT): _amps_sensor(),
             cv.Optional(CONF_OFFERED_CURRENT): _amps_sensor(),
+            # The limit the TWC reports back in its heartbeat, i.e. what it
+            # actually took over from us and offers the car.
+            cv.Optional(CONF_REPORTED_CURRENT): _amps_sensor(),
             cv.Optional(CONF_STATE): sensor.sensor_schema(
                 icon=ICON_EV_STATION,
                 accuracy_decimals=0,

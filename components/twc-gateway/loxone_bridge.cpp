@@ -159,10 +159,10 @@ std::string LoxoneBridge::build_status_line_() const {
   const auto &s = m.secondary();
   char buf[240];
   snprintf(buf, sizeof(buf),
-           "vc=%d;cac=%d;cp=%.2f;mr=%.3f;a=%.2f;offer=%u;set=%u;ca=%d;st=%u;ps=%d;link=%d;failsafe=%d;ms=%d",
+           "vc=%d;cac=%d;cp=%.2f;mr=%.3f;a=%.2f;offer=%u;twc=%.2f;set=%u;ca=%d;st=%u;ps=%d;link=%d;failsafe=%d;ms=%d",
            this->parent_->is_vehicle_connected() ? 1 : 0, this->parent_->is_charging() ? 1 : 0,
            this->parent_->power_kw(), this->parent_->energy_valid() ? this->parent_->energy_kwh() : 0.0,
-           s.actual_centiamps / 100.0, m.offered_current(), m.policy().requested_current(),
+           s.actual_centiamps / 100.0, m.offered_current(), s.reported_max_centiamps / 100.0, m.policy().requested_current(),
            m.policy().enabled() ? 1 : 0, s.vehicle_state, s.plug_state, s.linked ? 1 : 0,
            this->parent_->failsafe_active() ? 1 : 0, this->miniserver_ok_ ? 1 : 0);
   return buf;

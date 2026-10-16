@@ -82,6 +82,8 @@ twc-gateway:
     name: "Actual Current"
   offered_current:
     name: "Offered Current"
+  reported_current:
+    name: "TWC Reported Current"
   vehicle_connected:
     name: "Vehicle Connected"
   charging_active:

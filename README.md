@@ -216,10 +216,10 @@ twc-gateway:
 **Pull instead of push.** `GET /loxone` returns all values on one line, for a single Virtual HTTP Input with command recognition (`vc=\v`, `cp=\v`, …):
 
 ```
-vc=1;cac=1;cp=7.36;mr=1234.567;a=10.65;offer=11;set=11;ca=1;st=1;ps=1;link=1;failsafe=0;ms=1
+vc=1;cac=1;cp=7.36;mr=1234.567;a=10.65;offer=11;twc=11.00;set=11;ca=1;st=1;ps=1;link=1;failsafe=0;ms=1
 ```
 
-`a` actual current, `offer` currently offered amps, `set` requested amps, `ca` charging allowed, `st` vehicle state, `ps` plug state, `link` TWC linked, `failsafe` watchdog expired, `ms` last push to the Miniserver succeeded.
+`a` actual current, `offer` currently offered amps, `twc` the limit the TWC reports back, `set` requested amps, `ca` charging allowed, `st` vehicle state, `ps` plug state, `link` TWC linked, `failsafe` watchdog expired, `ms` last push to the Miniserver succeeded.
 
 ## Configuration reference
 
@@ -259,6 +259,7 @@ vc=1;cac=1;cp=7.36;mr=1234.567;a=10.65;offer=11;set=11;ca=1;st=1;ps=1;link=1;fai
 | `actual_current` | `sensor` | Current the car draws (A, 0.01 A resolution). |
 | `current` | `sensor` | Same as `actual_current` (kept for older configs). |
 | `offered_current` | `sensor` | Current offered to the car right now, after watchdog, switch and min on/off time. |
+| `reported_current` | `sensor` | The current limit the TWC reports back in its heartbeat (A): what it actually took over and offers the car. Lags `offered_current` by a heartbeat or two; if it stays at 0 while `offered_current` is not, the TWC isn't accepting the limit. |
 | `max_allowable_current` | `sensor` | The TWC's own hardware maximum (A). |
 | `phase_1/2/3_voltage` | `sensor` | Per-phase voltage (V). |
 | `phase_1/2/3_current` | `sensor` | Per-phase current (A, 0.5 A steps). |

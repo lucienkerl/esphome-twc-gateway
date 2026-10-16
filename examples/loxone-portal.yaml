@@ -96,6 +96,8 @@ twc-gateway:
     name: "Actual Current"
   offered_current:
     name: "Offered Current"
+  reported_current:
+    name: "TWC Reported Current"
   max_allowable_current:
     name: "TWC Max Current"
   vehicle_connected:
