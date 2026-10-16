@@ -39,6 +39,7 @@ class TWCGateway : public number::Number, public uart::UARTDevice, public Compon
   void setup() override;
   void loop() override;
   void dump_config() override;
+  void on_safe_shutdown() override;
   float get_setup_priority() const override { return setup_priority::DATA; }
 
   // --- configuration (called from generated code, before setup()) --------

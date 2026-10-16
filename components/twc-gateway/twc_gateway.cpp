@@ -31,7 +31,10 @@ static const char *const TAG_FRAMES = "twc-gateway.frames";
 // Measurements are published at most this often (heartbeats arrive ~1/s).
 static constexpr uint32_t PUBLISH_INTERVAL_MS = 1000;
 // Persist the energy meter every 0.1 kWh (~10 flash writes per kWh charged).
-static constexpr double ENERGY_SAVE_STEP_KWH = 0.1;
+// Loxone's Wallbox block discards a falling meter reading, so a reboot must
+// not lose much: preferences are only written to flash every
+// flash_write_interval anyway, and on_safe_shutdown() saves the rest.
+static constexpr double ENERGY_SAVE_STEP_KWH = 0.01;
 static constexpr uint32_t WARN_INTERVAL_MS = 60000;
 // One INFO status line this often while linked.
 static constexpr uint32_t STATUS_LOG_INTERVAL_MS = 10000;
@@ -310,6 +313,12 @@ void TWCGateway::publish_derived_() {
   pub(this->vehicle_connected_binary_sensor_, connected);
   pub(this->charging_active_numeric_sensor_, charging ? 1.0f : 0.0f);
   pub(this->vehicle_connected_numeric_sensor_, connected ? 1.0f : 0.0f);
+}
+
+void TWCGateway::on_safe_shutdown() {
+  // OTA update or reboot from the web page: keep the meter reading exact.
+  this->energy_saved_ = -1;
+  this->save_energy_();
 }
 
 void TWCGateway::save_energy_() {
