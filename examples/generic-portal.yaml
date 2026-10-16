@@ -115,6 +115,17 @@ twc-gateway:
     name: "Vehicle Connected"
   charging_active_numeric:
     name: "Charging Active"
+  power:
+    name: "Charging Power"
+  energy:
+    name: "Energy"
+  link:
+    name: "TWC Link"
+
+  # GET /loxone and GET /loxone/set?ca=&tp= for a Loxone Wallbox block,
+  # without pushing to a Miniserver (that needs credentials, so it's left to
+  # examples/loxone.yaml).
+  loxone: {}
 
 # --- MQTT, configured after flashing instead of baked in -------------------
 # enable_on_boot: false keeps this disabled until apply_mqtt_settings (see
@@ -152,7 +163,7 @@ text:
     mode: text
     optimistic: true
     restore_value: true
-    set_action:
+    on_value:
       - script.execute: apply_mqtt_settings
   - platform: template
     name: "MQTT Username"
@@ -160,7 +171,7 @@ text:
     mode: text
     optimistic: true
     restore_value: true
-    set_action:
+    on_value:
       - script.execute: apply_mqtt_settings
   - platform: template
     name: "MQTT Password"
@@ -168,5 +179,5 @@ text:
     mode: password
     optimistic: true
     restore_value: true
-    set_action:
+    on_value:
       - script.execute: apply_mqtt_settings

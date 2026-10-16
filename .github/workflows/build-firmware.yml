@@ -1,0 +1,90 @@
+name: Build firmware
+
+# Builds the ready-to-flash, credential-free firmwares described in the
+# README's "Quick start" section from the component in this checkout:
+#
+#   generic-portal  examples/generic-portal.yaml  (WiFi + MQTT setup page)
+#   loxone-portal   examples/loxone-portal.yaml   (WiFi + Loxone setup page)
+#
+# Every run uploads the binaries as a workflow artifact. On main they are
+# also published as rolling GitHub Releases, which the web flasher in docs/
+# installs from.
+
+on:
+  push:
+    paths:
+      - "examples/generic-portal.yaml"
+      - "examples/loxone-portal.yaml"
+      - "components/**"
+      - ".github/workflows/build-firmware.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - firmware: generic-portal
+            summary: >-
+              Generic, credential-free build. No WiFi or MQTT settings are
+              baked in - configure both from the device's own portal after
+              flashing, see the README.
+          - firmware: loxone-portal
+            summary: >-
+              Loxone Wallbox block build for an M5Stack Atom Lite with the
+              Atomic RS485 Base. WiFi, Miniserver IP and credentials are set
+              on the device's own web page after flashing, see the README.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Point the config at this checkout
+        run: |
+          mkdir -p build
+          sed -E \
+            -e "s#source: github://lucienkerl/esphome-twc-gateway(@main)?#source:\n      type: local\n      path: ../components#" \
+            -e '/refresh: 0s/d' "examples/${{ matrix.firmware }}.yaml" > "build/${{ matrix.firmware }}.yaml"
+
+      - name: Build firmware
+        id: build
+        uses: esphome/build-action@v7.0.0
+        with:
+          yaml-file: build/${{ matrix.firmware }}.yaml
+          release-summary: ${{ matrix.summary }}
+          release-url: https://github.com/${{ github.repository }}/blob/main/examples/${{ matrix.firmware }}.yaml
+          complete-manifest: true
+
+      - name: Rename build output
+        run: mv "${{ steps.build.outputs.name }}" output
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.firmware }}
+          path: output/*
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.firmware }}-latest
+          name: ${{ matrix.firmware }} build (auto-updated)
+          body: |
+            Automatically rebuilt from `examples/${{ matrix.firmware }}.yaml`
+            on every push to `main` that touches it or the component itself -
+            this is not a versioned release, the assets here are simply always
+            current with the `main` branch.
+
+            ${{ matrix.summary }}
+
+            Flash `*.factory.bin` with any ESP32 flashing tool (esptool.py,
+            ESPHome's own flasher, etc.), or use `manifest.json` with
+            [ESP Web Tools](https://esphome.github.io/esp-web-tools/) for a
+            browser-based flash. Later updates: upload `*.ota.bin` on the
+            device's web page.
+          files: output/*
+          make_latest: false

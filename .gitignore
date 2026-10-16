@@ -3,3 +3,5 @@ __pycache__/
 # Ignore vim recovery files
 .*.swp
 
+tests/test_twc
+.esphome/

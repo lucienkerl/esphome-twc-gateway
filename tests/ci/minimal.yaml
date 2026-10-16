@@ -1,0 +1,31 @@
+# Compile check: the smallest valid config - one sensor, no web server, no
+# API. Every other entity pointer stays null, which the component must
+# handle (it didn't before; see the null-checks in twc_gateway.cpp).
+esphome:
+  name: twc-minimal
+
+esp32:
+  board: esp32dev
+
+wifi:
+  ssid: "ci"
+  password: "ci-password"
+
+logger:
+
+uart:
+  id: twc_uart
+  tx_pin: GPIO19
+  rx_pin: GPIO22
+  baud_rate: 9600
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+
+twc-gateway:
+  uart_id: twc_uart
+  max_current: 16
+  current:
+    name: "Charging Current"
