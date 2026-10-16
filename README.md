@@ -235,7 +235,9 @@ Instead of (or as well as) the API connector, the gateway can send its values to
    | Cp | `cp=\v` | Cp (kW) |
    | Mr | `mr=\v` | Mr (kWh) |
 
-   Further fields (`a=\v` actual current, `offer=\v`, `twc=\v`, …) can be picked up the same way for display.
+   Further fields (`;a=\v` actual current - with the `;`, plain `a=` would also match inside `ca=` -, `offer=\v`, `twc=\v`, …) can be picked up the same way for display.
+
+   Or import the ready-made template [`loxone/VIU_TWC_Gateway.xml`](loxone/VIU_TWC_Gateway.xml) (Vc, Cac, Cp, Mr plus actual/offered current, link and failsafe; port 7000): in Loxone Config, *Virtual Inputs* → *Virtual UDP Input* → *Import template*, or copy it to `Documents/Loxone/Loxone Config/Templates/VirtualIn/`. Then set the sender IP and, if you changed it, the port.
 3. Disconnect `TWC_API` from the block's API connector (or delete it), so the block isn't fed twice.
 4. On the ESP: enter the port as **Loxone UDP Port** on its web page and clear **Loxone API Input**. In your own config: `udp_port: 7000` under `loxone:`, without `api_input`.
 

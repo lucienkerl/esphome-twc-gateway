@@ -176,7 +176,7 @@ number:
 # START_CHARGING after a StopCharging, and the limit in every heartbeat.
 switch:
   - platform: template
-    name: "Send Start/Stop Commands"
+    name: "Send Start-Stop Commands"
     id: start_stop_commands
     icon: mdi:play-pause
     optimistic: true
