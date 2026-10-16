@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VirtualOut Title="TWC Gateway" Comment="Tesla Wall Connector via TWC Gateway - replace the address with the gateway IP" Address="http://192.168.1.50" CmdInit="" CloseAfterSend="true" CmdSep="">
+	<Info templateType="3" minVersion="15050304"/>
+	<VirtualOutCmd Title="TWC Ca" Comment="Wallbox block output Ca" CmdOnMethod="GET" CmdOffMethod="GET" CmdOn="/loxone/set?ca=1" CmdOnHTTP="" CmdOnPost="" CmdOff="/loxone/set?ca=0" CmdOffHTTP="" CmdOffPost="" CmdAnswer="" HintText="" Analog="false" Repeat="0" RepeatRate="0"/>
+	<VirtualOutCmd Title="TWC Tp" Comment="Wallbox block output Tp (kW)" CmdOnMethod="GET" CmdOffMethod="GET" CmdOn="/loxone/set?tp=&lt;v.2&gt;" CmdOnHTTP="" CmdOnPost="" CmdOff="" CmdOffHTTP="" CmdOffPost="" CmdAnswer="" HintText="" Analog="true" Repeat="0" RepeatRate="0"/>
+</VirtualOut>

@@ -42,6 +42,7 @@ static constexpr uint32_t UDP_KEEPALIVE_MS = 10000;
 // this request (sent without credentials) proves it alive for the watchdog.
 static constexpr const char *ALIVE_PATH = "/jdev/cfg/version";
 static constexpr const char *UDP_TEMPLATE_PATH = "/loxone/udp.xml";
+static constexpr const char *OUTPUT_TEMPLATE_PATH = "/loxone/output.xml";
 // Suggested in the template while no UDP port is configured yet.
 static constexpr uint16_t DEFAULT_UDP_PORT = 7000;
 
@@ -88,6 +89,26 @@ std::string encode_path_segment(const std::string &in) {
     }
   }
   return out;
+}
+
+// This device's IPv4 address as text, "" if it has none yet. Both templates
+// use it: as the UDP sender to accept, and as the Virtual Output's address.
+std::string own_ipv4() {
+  char ip[network::IP_ADDRESS_BUFFER_SIZE] = "";
+  for (auto &addr : network::get_ip_addresses()) {
+    if (addr.is_set() && addr.is_ip4()) {
+      addr.str_to(ip);
+      break;
+    }
+  }
+  return ip;
+}
+
+void send_xml_attachment(AsyncWebServerRequest *request, const char *filename, const std::string &xml) {
+  auto *response = request->beginResponse(200, "application/xml", xml);
+  std::string disposition = std::string("attachment; filename=\"") + filename + "\"";
+  response->addHeader("Content-Disposition", disposition.c_str());
+  request->send(response);
 }
 
 }  // namespace
@@ -137,6 +158,31 @@ std::string build_udp_template(const std::string &sender_ip, uint16_t port) {
     xml += buf;
   }
   xml += "</VirtualInUdp>\r\n";
+  return xml;
+}
+
+// Loxone Config template for the Virtual Output that brings the Wallbox
+// block's Ca and Tp back (Virtual Outputs -> Virtual Output -> import).
+std::string build_output_template(const std::string &gateway_ip) {
+  std::string xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n";
+  char buf[200];
+  snprintf(buf, sizeof(buf),
+           "<VirtualOut Title=\"TWC Gateway\" Comment=\"Tesla Wall Connector via TWC Gateway\" "
+           "Address=\"http://%s\" CmdInit=\"\" CloseAfterSend=\"true\" CmdSep=\"\">\r\n",
+           gateway_ip.c_str());
+  xml += buf;
+  xml += "\t<Info templateType=\"3\" minVersion=\"15050304\"/>\r\n";
+  // Ca: digital, one request each for on and off.
+  xml += "\t<VirtualOutCmd Title=\"TWC Ca\" Comment=\"Wallbox block output Ca\" CmdOnMethod=\"GET\" "
+         "CmdOffMethod=\"GET\" CmdOn=\"/loxone/set?ca=1\" CmdOnHTTP=\"\" CmdOnPost=\"\" "
+         "CmdOff=\"/loxone/set?ca=0\" CmdOffHTTP=\"\" CmdOffPost=\"\" CmdAnswer=\"\" HintText=\"\" "
+         "Analog=\"false\" Repeat=\"0\" RepeatRate=\"0\"/>\r\n";
+  // Tp: analog kW with two decimals; sent on every change, also for 0.
+  xml += "\t<VirtualOutCmd Title=\"TWC Tp\" Comment=\"Wallbox block output Tp (kW)\" CmdOnMethod=\"GET\" "
+         "CmdOffMethod=\"GET\" CmdOn=\"/loxone/set?tp=&lt;v.2&gt;\" CmdOnHTTP=\"\" CmdOnPost=\"\" "
+         "CmdOff=\"\" CmdOffHTTP=\"\" CmdOffPost=\"\" CmdAnswer=\"\" HintText=\"\" "
+         "Analog=\"true\" Repeat=\"0\" RepeatRate=\"0\"/>\r\n";
+  xml += "</VirtualOut>\r\n";
   return xml;
 }
 
@@ -489,21 +535,27 @@ bool LoxoneBridge::canHandle(AsyncWebServerRequest *request) const {
 #ifdef USE_ESP32
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   StringRef url = request->url_to(url_buf);
-  return url == "/loxone" || url == "/loxone/set" || url == UDP_TEMPLATE_PATH;
+  return url == "/loxone" || url == "/loxone/set" || url == UDP_TEMPLATE_PATH || url == OUTPUT_TEMPLATE_PATH;
 #else
-  return request->url() == "/loxone" || request->url() == "/loxone/set" || request->url() == UDP_TEMPLATE_PATH;
+  const auto &url = request->url();
+  return url == "/loxone" || url == "/loxone/set" || url == UDP_TEMPLATE_PATH || url == OUTPUT_TEMPLATE_PATH;
 #endif
 }
 
 void LoxoneBridge::handleRequest(AsyncWebServerRequest *request) {
 #ifdef USE_ESP32
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
-  bool is_template = request->url_to(url_buf) == UDP_TEMPLATE_PATH;
+  StringRef url = request->url_to(url_buf);
 #else
-  bool is_template = request->url() == UDP_TEMPLATE_PATH;
+  const auto &url = request->url();
 #endif
-  if (is_template) {
-    this->send_udp_template_(request);
+  if (url == UDP_TEMPLATE_PATH) {
+    uint16_t port = this->udp_port_ != 0 ? this->udp_port_ : DEFAULT_UDP_PORT;
+    send_xml_attachment(request, "VIU_TWC_Gateway.xml", build_udp_template(own_ipv4(), port));
+    return;
+  }
+  if (url == OUTPUT_TEMPLATE_PATH) {
+    send_xml_attachment(request, "VO_TWC_Gateway.xml", build_output_template(own_ipv4()));
     return;
   }
   // Runs in the web server's task: parse here, apply in the main loop.
@@ -538,22 +590,6 @@ void LoxoneBridge::handleRequest(AsyncWebServerRequest *request) {
     line = this->status_line_;
   }
   request->send(200, "text/plain", line.c_str());
-}
-
-void LoxoneBridge::send_udp_template_(AsyncWebServerRequest *request) {
-  // The template's sender address is this device, so the Virtual UDP Input
-  // only takes datagrams from it.
-  char ip[network::IP_ADDRESS_BUFFER_SIZE] = "";
-  for (auto &addr : network::get_ip_addresses()) {
-    if (addr.is_set() && addr.is_ip4()) {
-      addr.str_to(ip);
-      break;
-    }
-  }
-  uint16_t port = this->udp_port_ != 0 ? this->udp_port_ : DEFAULT_UDP_PORT;
-  auto *response = request->beginResponse(200, "application/xml", build_udp_template(ip, port));
-  response->addHeader("Content-Disposition", "attachment; filename=\"VIU_TWC_Gateway.xml\"");
-  request->send(response);
 }
 
 }  // namespace twc_gateway

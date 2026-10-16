@@ -1,29 +1,31 @@
-// Adds a "Loxone UDP template" box above the ESPHome web UI: a download link
-// for GET /loxone/udp.xml (served by the gateway with its own IP and the
-// configured UDP port) and the steps to use it. Included via
+// Adds a "Loxone templates" box above the ESPHome web UI: download links for
+// GET /loxone/udp.xml and GET /loxone/output.xml (served by the gateway with
+// its own IP and the configured UDP port) and the steps to use them. Included via
 // web_server: js_include: in loxone-portal.yaml.
 const de = (navigator.language || "").toLowerCase().startsWith("de");
 const t = de
   ? {
-      title: "Loxone: Virtueller UDP-Eingang",
-      download: "Vorlage herunterladen (VIU_TWC_Gateway.xml)",
+      title: "Loxone: Vorlagen für UDP-Eingang und Ausgang",
+      download: "UDP-Eingang (VIU_TWC_Gateway.xml)",
+      downloadOut: "Virtueller Ausgang Ca/Tp (VO_TWC_Gateway.xml)",
       steps: [
         "Unten unter „Loxone UDP Port“ einen Port eintragen (z. B. 7000) und „Loxone API Input“ leeren.",
-        "Vorlage herunterladen – Absender-IP und Port sind schon eingetragen.",
+        "Beide Vorlagen herunterladen – IP und Port des Gateways sind schon eingetragen.",
         "Loxone Config: Virtuelle Eingänge → Virtueller UDP Eingang → Vorlage importieren.",
         "„TWC Vc“, „TWC Cac“, „TWC Cp“, „TWC Mr“ mit Vc, Cac, Cp, Mr des Wallbox-Bausteins verbinden; den API-Connector trennen.",
-        "Ca und Tp des Bausteins bleiben am Virtuellen Ausgang (/loxone/set?ca=…, /loxone/set?tp=…).",
+        "Ausgangs-Vorlage unter Virtuelle Ausgänge → Virtueller Ausgang → Vorlage importieren; „TWC Ca“ an Ca, „TWC Tp“ an Tp des Bausteins.",
       ],
     }
   : {
-      title: "Loxone: Virtual UDP Input",
-      download: "Download template (VIU_TWC_Gateway.xml)",
+      title: "Loxone: templates for the UDP input and the output",
+      download: "UDP input (VIU_TWC_Gateway.xml)",
+      downloadOut: "Virtual Output Ca/Tp (VO_TWC_Gateway.xml)",
       steps: [
         "Below, set “Loxone UDP Port” (e.g. 7000) and clear “Loxone API Input”.",
-        "Download the template - sender IP and port are already filled in.",
+        "Download both templates - the gateway's IP and port are already filled in.",
         "Loxone Config: Virtual Inputs → Virtual UDP Input → import template.",
         "Connect “TWC Vc”, “TWC Cac”, “TWC Cp”, “TWC Mr” to the Wallbox block's Vc, Cac, Cp, Mr; disconnect the API connector.",
-        "The block's Ca and Tp stay on the Virtual Output (/loxone/set?ca=…, /loxone/set?tp=…).",
+        "Import the output template under Virtual Outputs → Virtual Output → import template; connect “TWC Ca” to the block's Ca, “TWC Tp” to its Tp.",
       ],
     };
 
@@ -36,12 +38,17 @@ summary.textContent = t.title;
 summary.style.cssText = "cursor:pointer;font-weight:600";
 box.appendChild(summary);
 
-const link = document.createElement("a");
-link.href = "/loxone/udp.xml";
-link.download = "VIU_TWC_Gateway.xml";
-link.textContent = t.download;
-link.style.cssText = "display:inline-block;margin:8px 0;font-weight:600";
-box.appendChild(link);
+for (const [href, file, text] of [
+  ["/loxone/udp.xml", "VIU_TWC_Gateway.xml", t.download],
+  ["/loxone/output.xml", "VO_TWC_Gateway.xml", t.downloadOut],
+]) {
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = file;
+  link.textContent = text;
+  link.style.cssText = "display:block;margin:6px 0;font-weight:600";
+  box.appendChild(link);
+}
 
 const list = document.createElement("ol");
 list.style.cssText = "margin:4px 0 0;padding-left:20px";

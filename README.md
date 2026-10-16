@@ -243,7 +243,7 @@ Instead of (or as well as) the API connector, the gateway can send its values to
 3. Disconnect `TWC_API` from the block's API connector (or delete it), so the block isn't fed twice.
 4. On the ESP: enter the port as **Loxone UDP Port** on its web page and clear **Loxone API Input**. In your own config: `udp_port: 7000` under `loxone:`, without `api_input`.
 
-Ca/Tp still come back through the Virtual Output. With UDP only, nothing proves the Miniserver alive, so every `keepalive` (30 s) the gateway sends `GET /jdev/cfg/version` without credentials; any HTTP answer feeds the setpoint watchdog and sets `ms=1`.
+Ca/Tp still come back through the Virtual Output (step 4 of [Loxone Config](#loxone-config)). It too comes as an import file: [`loxone/VO_TWC_Gateway.xml`](loxone/VO_TWC_Gateway.xml) (replace the address `http://192.168.1.50` with the gateway's), or **`http://<esp-ip>/loxone/output.xml`** with the address already set. Import it under *Virtual Outputs* → *Virtual Output* → *Import template* and connect **TWC Ca** to the block's Ca and **TWC Tp** to its Tp. With UDP only, nothing proves the Miniserver alive, so every `keepalive` (30 s) the gateway sends `GET /jdev/cfg/version` without credentials; any HTTP answer feeds the setpoint watchdog and sets `ms=1`.
 
 ## Configuration reference
 
