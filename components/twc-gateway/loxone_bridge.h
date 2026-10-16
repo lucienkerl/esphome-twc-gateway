@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //   Miniserver -> ESP  GET /loxone/set?ca=<0|1>&tp=<kW>  (block outputs Ca/Tp)
 //   anyone -> ESP      GET /loxone -> "vc=1;cac=1;cp=7.36;mr=1234.567;..."
 //                      for a single Virtual HTTP Input as a pull fallback.
+//   anyone -> ESP      GET /loxone/udp.xml -> Loxone Config template for the
+//                      Virtual UDP Input, with this device's IP and port.
 //
 // The push uses a small non-blocking HTTP/1.0 client so the RS-485 timing in
 // the main loop never waits on the network.
@@ -43,6 +45,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 namespace esphome {
 namespace twc_gateway {
+
+/// Loxone Config import file for a Virtual UDP Input matching the status
+/// line (GET /loxone/udp.xml serves it with this device's IP and port).
+std::string build_udp_template(const std::string &sender_ip, uint16_t port);
 
 class LoxoneBridge : public Component, public AsyncWebHandler {
  public:
@@ -82,6 +88,7 @@ class LoxoneBridge : public Component, public AsyncWebHandler {
   bool udp_enabled_() const { return !this->host_.empty() && this->udp_port_ != 0; }
   void send_udp_(uint32_t now);
   void queue_get_(const std::string &path, bool probe = false);
+  void send_udp_template_(AsyncWebServerRequest *request);
   std::string build_set_text_() const;
   std::string build_status_line_() const;
   void queue_push_(const std::string &input, const std::string &text);

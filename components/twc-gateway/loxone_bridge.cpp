@@ -41,6 +41,9 @@ static constexpr uint32_t UDP_KEEPALIVE_MS = 10000;
 // With UDP only, nothing comes back from the Miniserver; any HTTP answer to
 // this request (sent without credentials) proves it alive for the watchdog.
 static constexpr const char *ALIVE_PATH = "/jdev/cfg/version";
+static constexpr const char *UDP_TEMPLATE_PATH = "/loxone/udp.xml";
+// Suggested in the template while no UDP port is configured yet.
+static constexpr uint16_t DEFAULT_UDP_PORT = 7000;
 
 namespace {
 
@@ -88,6 +91,51 @@ std::string encode_path_segment(const std::string &in) {
 }
 
 }  // namespace
+
+// Loxone Config template for a Virtual UDP Input (Virtual Inputs ->
+// Virtual UDP Input -> import). One command per field of the status line;
+// all but the first are matched with their leading ';' so that e.g. "a="
+// can never hit "ca=" or "cac=".
+std::string build_udp_template(const std::string &sender_ip, uint16_t port) {
+  struct Cmd {
+    const char *title;
+    const char *check;
+    bool analog;
+    const char *unit;
+  };
+  static const Cmd CMDS[] = {
+      {"TWC Vc", "vc=\\v", false, ""},
+      {"TWC Cac", ";cac=\\v", false, ""},
+      {"TWC Cp", ";cp=\\v", true, "&lt;v.2&gt; kW"},
+      {"TWC Mr", ";mr=\\v", true, "&lt;v.3&gt; kWh"},
+      {"TWC Actual Current", ";a=\\v", true, "&lt;v.2&gt; A"},
+      {"TWC Offered Current", ";offer=\\v", true, "&lt;v&gt; A"},
+      {"TWC Reported Limit", ";twc=\\v", true, "&lt;v.2&gt; A"},
+      {"TWC Requested Current", ";set=\\v", true, "&lt;v&gt; A"},
+      {"TWC Charging Allowed", ";ca=\\v", false, ""},
+      {"TWC Vehicle State", ";st=\\v", true, "&lt;v&gt;"},
+      {"TWC Plug State", ";ps=\\v", true, "&lt;v&gt;"},
+      {"TWC Link", ";link=\\v", false, ""},
+      {"TWC Failsafe", ";failsafe=\\v", false, ""},
+  };
+  std::string xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n";
+  char buf[320];
+  snprintf(buf, sizeof(buf),
+           "<VirtualInUdp Title=\"TWC Gateway\" Comment=\"Tesla Wall Connector via TWC Gateway\" Address=\"%s\" "
+           "Port=\"%u\">\r\n\t<Info templateType=\"1\" minVersion=\"15050304\"/>\r\n",
+           sender_ip.c_str(), port);
+  xml += buf;
+  for (const auto &c : CMDS) {
+    snprintf(buf, sizeof(buf),
+             "\t<VirtualInUdpCmd Title=\"%s\" Comment=\"\" Address=\"\" Check=\"%s\" Signed=\"true\" "
+             "Analog=\"%s\" SourceValLow=\"0\" DestValLow=\"0\" SourceValHigh=\"100\" DestValHigh=\"100\" "
+             "DefVal=\"0\" MinVal=\"-2147483648\" MaxVal=\"2147483647\" Unit=\"%s\" HintText=\"\"/>\r\n",
+             c.title, c.check, c.analog ? "true" : "false", c.unit);
+    xml += buf;
+  }
+  xml += "</VirtualInUdp>\r\n";
+  return xml;
+}
 
 void LoxoneBridge::set_credentials(const std::string &user, const std::string &password) {
   if (user.empty()) {
@@ -438,13 +486,23 @@ bool LoxoneBridge::canHandle(AsyncWebServerRequest *request) const {
 #ifdef USE_ESP32
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   StringRef url = request->url_to(url_buf);
-  return url == "/loxone" || url == "/loxone/set";
+  return url == "/loxone" || url == "/loxone/set" || url == UDP_TEMPLATE_PATH;
 #else
-  return request->url() == "/loxone" || request->url() == "/loxone/set";
+  return request->url() == "/loxone" || request->url() == "/loxone/set" || request->url() == UDP_TEMPLATE_PATH;
 #endif
 }
 
 void LoxoneBridge::handleRequest(AsyncWebServerRequest *request) {
+#ifdef USE_ESP32
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  bool is_template = request->url_to(url_buf) == UDP_TEMPLATE_PATH;
+#else
+  bool is_template = request->url() == UDP_TEMPLATE_PATH;
+#endif
+  if (is_template) {
+    this->send_udp_template_(request);
+    return;
+  }
   // Runs in the web server's task: parse here, apply in the main loop.
   bool has_ca = request->hasParam("ca");
   bool has_tp = request->hasParam("tp");
@@ -477,6 +535,22 @@ void LoxoneBridge::handleRequest(AsyncWebServerRequest *request) {
     line = this->status_line_;
   }
   request->send(200, "text/plain", line.c_str());
+}
+
+void LoxoneBridge::send_udp_template_(AsyncWebServerRequest *request) {
+  // The template's sender address is this device, so the Virtual UDP Input
+  // only takes datagrams from it.
+  char ip[network::IP_ADDRESS_BUFFER_SIZE] = "";
+  for (auto &addr : network::get_ip_addresses()) {
+    if (addr.is_set() && addr.is_ip4()) {
+      addr.str_to(ip);
+      break;
+    }
+  }
+  uint16_t port = this->udp_port_ != 0 ? this->udp_port_ : DEFAULT_UDP_PORT;
+  auto *response = request->beginResponse(200, "application/xml", build_udp_template(ip, port));
+  response->addHeader("Content-Disposition", "attachment; filename=\"VIU_TWC_Gateway.xml\"");
+  request->send(response);
 }
 
 }  // namespace twc_gateway

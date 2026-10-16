@@ -238,6 +238,8 @@ Instead of (or as well as) the API connector, the gateway can send its values to
    Further fields (`;a=\v` actual current - with the `;`, plain `a=` would also match inside `ca=` -, `offer=\v`, `twc=\v`, …) can be picked up the same way for display.
 
    Or import the ready-made template [`loxone/VIU_TWC_Gateway.xml`](loxone/VIU_TWC_Gateway.xml) (Vc, Cac, Cp, Mr plus actual/offered current, link and failsafe; port 7000): in Loxone Config, *Virtual Inputs* → *Virtual UDP Input* → *Import template*, or copy it to `Documents/Loxone/Loxone Config/Templates/VirtualIn/`. Then set the sender IP and, if you changed it, the port.
+
+   Easier still: download **`http://<esp-ip>/loxone/udp.xml`** from the gateway itself. It is the same import file with the gateway's IP already set as sender and the **Loxone UDP Port** from its web page (7000 while that is still 0), and it has commands for every field of the line (also `twc`, `set`, `ca`, `st`, `ps`).
 3. Disconnect `TWC_API` from the block's API connector (or delete it), so the block isn't fed twice.
 4. On the ESP: enter the port as **Loxone UDP Port** on its web page and clear **Loxone API Input**. In your own config: `udp_port: 7000` under `loxone:`, without `api_input`.
 
