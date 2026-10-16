@@ -73,6 +73,10 @@ ota:
 web_server:
   port: 80
   version: 3
+  # Box at the top of the page: download link for the Loxone Virtual UDP
+  # Input template (/loxone/udp.xml) and how to use it. Spelled via
+  # ../examples/ so it also resolves for the copy CI builds from build/.
+  js_include: ../examples/loxone-webui.js
 
 uart:
   id: twc_uart
