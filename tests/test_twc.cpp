@@ -289,6 +289,14 @@ static void test_policy_clamp_and_enable() {
   CHECK_EQ(p.effective_current(300, r), 0);
   p.set_enabled(true, 400);
   CHECK_EQ(p.effective_current(500, r), 10);
+
+  // Lowering max_current at runtime caps an already requested current.
+  c.max_current = 8;
+  p.configure(c);
+  CHECK_EQ(p.effective_current(600, r), 8);
+  c.max_current = 16;
+  p.configure(c);
+  CHECK_EQ(p.effective_current(700, r), 10);
 }
 
 static void test_policy_watchdog() {

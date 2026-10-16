@@ -163,7 +163,7 @@ text:
     mode: text
     optimistic: true
     restore_value: true
-    set_action:
+    on_value:
       - script.execute: apply_mqtt_settings
   - platform: template
     name: "MQTT Username"
@@ -171,7 +171,7 @@ text:
     mode: text
     optimistic: true
     restore_value: true
-    set_action:
+    on_value:
       - script.execute: apply_mqtt_settings
   - platform: template
     name: "MQTT Password"
@@ -179,5 +179,5 @@ text:
     mode: password
     optimistic: true
     restore_value: true
-    set_action:
+    on_value:
       - script.execute: apply_mqtt_settings

@@ -61,6 +61,9 @@ class LoxoneBridge : public Component, public AsyncWebHandler {
   void set_min_interval(uint32_t ms) { this->min_interval_ms_ = ms; }
   void set_keepalive(uint32_t ms) { this->keepalive_ms_ = ms; }
   void set_feed_watchdog(bool v) { this->feed_watchdog_ = v; }
+  // Call after changing the settings above at runtime (e.g. from text
+  // entities in the web UI): drops queued pushes and pushes again at once.
+  void reset_push();
 
   // AsyncWebHandler
   bool canHandle(AsyncWebServerRequest *request) const override;

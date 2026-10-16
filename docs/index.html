@@ -156,6 +156,13 @@
       <span slot="not-allowed">This page needs to be loaded over HTTPS to install firmware.</span>
     </esp-web-install-button>
     <p class="compat">Works in desktop Chrome or Edge (Web Serial API). Not supported on Firefox, Safari, or mobile browsers — flash from a laptop/desktop instead.</p>
+    <h2>Or: Loxone build</h2>
+    <p>For the Loxone Wallbox block, on an M5Stack Atom Lite with the Atomic RS485 Base. WiFi works as in step 2; Miniserver IP, user, password and API input are then entered under "Loxone" on the device's own web page. See the README's "Loxone Wallbox block" section for the Loxone Config side.</p>
+    <esp-web-install-button manifest="https://github.com/lucienkerl/esphome-twc-gateway/releases/download/loxone-portal-latest/manifest.json">
+      <button slot="activate">Install Loxone build</button>
+      <span slot="unsupported">Your browser doesn't support Web Serial. Open this page in Chrome or Edge on a desktop instead.</span>
+      <span slot="not-allowed">This page needs to be loaded over HTTPS to install firmware.</span>
+    </esp-web-install-button>
   </div>
 
   <div class="card">

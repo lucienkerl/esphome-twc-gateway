@@ -1,0 +1,215 @@
+##############################################################################
+# Tesla Wall Connector Gen 2 -> Loxone Wallbox block, ready-to-flash build
+#
+# ONE binary, nothing baked in: no WiFi, no Miniserver address, no
+# passwords. No Home Assistant and no ESPHome install needed. Everything is
+# set from the device's own web page after flashing:
+#
+#   1. Flash the factory .bin (browser flasher or esptool, see the README).
+#   2. Join the WiFi "twc-setup" (password "twcsetup1"), pick your WiFi
+#      in the page that opens (or browse to http://192.168.4.1/).
+#   3. Open http://<device IP>/ and fill in under "Loxone":
+#      Miniserver IP, User, Password, API Input (default TWC_API) and
+#      Block (default Wb). Takes effect immediately and survives reboots.
+#   4. Set "Max Current" to what your circuit and breaker can carry.
+#
+# Built for an M5Stack Atom Lite with the Atomic RS485 Base (the pins
+# verified for this project). Other boards: copy this file and change
+# esp32:/uart: below.
+#
+# Loxone side: see the README's "Loxone Wallbox block" section.
+##############################################################################
+
+esphome:
+  name: twc
+  friendly_name: Tesla Wall Connector
+  on_boot:
+    # After every component's setup(), so the text/number entities below
+    # already hold what was restored from flash.
+    priority: -100
+    then:
+      - script.execute: apply_loxone_settings
+      - lambda: id(twc).set_max_current((uint8_t) id(max_current_limit).state);
+
+esp32:
+  board: m5stack-atom
+
+# No ssid/password on purpose: with nothing set, the device opens the
+# access point below until a network is picked in the captive portal.
+wifi:
+  ap:
+    ssid: "twc-setup"
+    password: "twcsetup1"
+
+captive_portal:
+
+logger:
+  level: INFO
+
+# Firmware updates: upload a new *.ota.bin on the web page, or use the
+# ESPHome CLI.
+ota:
+  - platform: web_server
+  - platform: esphome
+
+web_server:
+  port: 80
+  version: 3
+
+uart:
+  id: twc_uart
+  # Verified on an M5Stack Atom Lite with the Atomic RS485 Base, which
+  # switches direction by itself (no flow_control_pin).
+  tx_pin: GPIO19
+  rx_pin: GPIO22
+  baud_rate: 9600
+
+external_components:
+  - source: github://lucienkerl/esphome-twc-gateway@main
+    components: [twc-gateway]
+    refresh: 0s
+
+twc-gateway:
+  id: twc
+  uart_id: twc_uart
+  twc_id: 0xAB32
+  min_current: 0
+  # Hard ceiling of this build. The actual limit is "Max Current" on the
+  # web page (default 16 A) - set that to what your circuit can carry.
+  max_current: 32
+  set_current: 0 # offer nothing until Loxone says otherwise
+
+  # Loxone silent for 2 minutes (no successful push, no command) -> 0 A.
+  setpoint_timeout: 120s
+  failsafe_current: 0
+
+  current:
+    name: "Charging Current"
+  power:
+    name: "Charging Power"
+  energy:
+    name: "Energy"
+  actual_current:
+    name: "Actual Current"
+  offered_current:
+    name: "Offered Current"
+  max_allowable_current:
+    name: "TWC Max Current"
+  vehicle_connected:
+    name: "Vehicle Connected"
+  charging_active:
+    name: "Charging Active"
+  allow_charging:
+    name: "Allow Charging"
+  link:
+    name: "TWC Link"
+  failsafe:
+    name: "Failsafe Active"
+  state:
+    name: "State"
+  serial:
+    name: "Serial"
+  firmware_version:
+    name: "Firmware Version"
+
+  # Miniserver settings come from the text entities below at runtime.
+  loxone:
+    id: twc_loxone
+
+number:
+  - platform: template
+    name: "Max Current"
+    id: max_current_limit
+    icon: mdi:current-ac
+    unit_of_measurement: A
+    min_value: 6
+    max_value: 32
+    step: 1
+    initial_value: 16
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    set_action:
+      - lambda: id(twc).set_max_current((uint8_t) x);
+
+script:
+  - id: apply_loxone_settings
+    mode: restart
+    then:
+      - lambda: |-
+          auto *lox = id(twc_loxone);
+          lox->set_miniserver(id(lox_ip).state, 80);
+          lox->set_credentials(id(lox_user).state, id(lox_password).state);
+          lox->set_api_input(id(lox_api_input).state);
+          std::string block = id(lox_block).state;
+          lox->set_block(block.empty() ? "Wb" : block);
+          lox->set_vc_input(id(lox_vc_input).state);
+          lox->reset_push();
+
+# on_value, not set_action: set_action runs before .state is updated, so the
+# script would still read the previous value.
+text:
+  - platform: template
+    name: "Loxone Miniserver IP"
+    id: lox_ip
+    icon: mdi:ip-network
+    mode: text
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - script.execute: apply_loxone_settings
+  - platform: template
+    name: "Loxone User"
+    id: lox_user
+    icon: mdi:account
+    mode: text
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - script.execute: apply_loxone_settings
+  - platform: template
+    name: "Loxone Password"
+    id: lox_password
+    icon: mdi:key
+    mode: password
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - script.execute: apply_loxone_settings
+  - platform: template
+    name: "Loxone API Input"
+    id: lox_api_input
+    icon: mdi:form-textbox
+    mode: text
+    optimistic: true
+    restore_value: true
+    initial_value: "TWC_API"
+    entity_category: config
+    on_value:
+      - script.execute: apply_loxone_settings
+  - platform: template
+    name: "Loxone Block"
+    id: lox_block
+    icon: mdi:function
+    mode: text
+    optimistic: true
+    restore_value: true
+    initial_value: "Wb"
+    entity_category: config
+    on_value:
+      - script.execute: apply_loxone_settings
+  # Leave empty unless Vc doesn't arrive through the API connector; then
+  # create a Virtual Input (e.g. "TWC_Vc") on the block's Vc and enter it.
+  - platform: template
+    name: "Loxone Vc Input"
+    id: lox_vc_input
+    icon: mdi:form-textbox
+    mode: text
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - script.execute: apply_loxone_settings

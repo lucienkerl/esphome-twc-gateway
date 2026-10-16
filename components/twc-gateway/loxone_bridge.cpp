@@ -90,6 +90,26 @@ void LoxoneBridge::set_credentials(const std::string &user, const std::string &p
   this->auth_header_ = "Authorization: Basic " + base64(user + ":" + password) + "\r\n";
 }
 
+void LoxoneBridge::reset_push() {
+  this->queue_.clear();
+  this->last_text_.clear();
+  this->last_vc_ = -1;
+  this->pushed_once_ = false;
+  this->consecutive_failures_ = 0;
+  this->miniserver_ok_ = false;
+  struct in_addr addr {};
+  if (!this->host_.empty() && inet_aton(this->host_.c_str(), &addr) == 0) {
+    ESP_LOGW(TAG, "Miniserver '%s' is not an IPv4 address, push disabled", this->host_.c_str());
+    this->host_.clear();
+  }
+  if (this->push_enabled_()) {
+    ESP_LOGI(TAG, "Push to http://%s:%u/dev/sps/io/%s/ (block '%s')", this->host_.c_str(), this->port_,
+             this->api_input_.c_str(), this->block_.c_str());
+  } else {
+    ESP_LOGI(TAG, "Push disabled (no miniserver/api_input set)");
+  }
+}
+
 void LoxoneBridge::setup() {
   this->base_->init();
   this->base_->add_handler(this);

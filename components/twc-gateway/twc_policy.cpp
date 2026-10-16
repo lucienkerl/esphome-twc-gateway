@@ -61,7 +61,8 @@ uint8_t ChargePolicy::effective_current(uint32_t now_ms, const SecondaryReport &
   if (this->watchdog_expired(now_ms)) {
     target = this->clamp(this->config_.failsafe_current);
   } else {
-    target = this->enabled_ ? this->requested_ : 0;
+    // Clamp again: max_current can be lowered at runtime (e.g. from the web UI).
+    target = this->enabled_ ? this->clamp(this->requested_) : 0;
   }
 
   // Minimum on time: once a car is actually drawing, don't yank the power

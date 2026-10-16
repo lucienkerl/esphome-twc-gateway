@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/lucienkerl/esphome-twc-gateway/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/lucienkerl/esphome-twc-gateway"></a>
-  <a href="https://github.com/lucienkerl/esphome-twc-gateway/actions/workflows/build-generic-portal.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/lucienkerl/esphome-twc-gateway/build-generic-portal.yml?branch=main&label=generic%20build"></a>
+  <a href="https://github.com/lucienkerl/esphome-twc-gateway/actions/workflows/build-firmware.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/lucienkerl/esphome-twc-gateway/build-firmware.yml?branch=main&label=firmware%20build"></a>
   <a href="https://esphome.io"><img alt="ESPHome external component" src="https://img.shields.io/badge/ESPHome-external%20component-2aa8c9"></a>
   <a href="https://lucienkerl.github.io/esphome-twc-gateway/"><img alt="Flash in browser" src="https://img.shields.io/badge/flash-in%20browser-5ee6d0"></a>
 </p>
@@ -85,6 +85,8 @@ Boards known to work: Olimex ESP32-POE / ESP32-POE-ISO with a MOD-RS485, and M5S
 This works because ESPHome's `wifi: ap:` + `captive_portal:` handle WiFi provisioning natively. MQTT has no equivalent built-in setup flow, so the config wires three `text:` entities to `MQTTClientComponent`'s runtime setters (`set_broker_address()` etc., confirmed against ESPHome's own source) instead, applying them once at boot and again on every edit.
 
 **Before you rely on this for actual charging:** the `max_current` baked into that build is a placeholder — see [Known limitations & safety notes](#known-limitations--safety-notes) before treating a quick-start flash as a finished installation. If you're comfortable with the ESPHome CLI and want one self-contained config with your credentials baked in instead (no post-flash setup step), use the example below.
+
+**Loxone build.** The same page also installs [`examples/loxone-portal.yaml`](examples/loxone-portal.yaml), a credential-free build for the Loxone Wallbox block on an M5Stack Atom Lite with the Atomic RS485 Base. No Home Assistant needed: after the WiFi step above, open the device's IP and fill in the *Loxone* settings (Miniserver IP, user, password, API input `TWC_API`, block `Wb`, and the optional Vc input). They apply immediately and survive reboots. Also set **Max Current** there (default 16 A, at most 32 A) to what your circuit can carry. Firmware updates: upload a newer `*.ota.bin` on the same page. The binaries are on the [`loxone-portal-latest`](https://github.com/lucienkerl/esphome-twc-gateway/releases/tag/loxone-portal-latest) release.
 
 ## Installation
 
@@ -188,7 +190,7 @@ Miniserver -> ESP   GET http://<esp>/loxone/set?ca=1
 4. Create a **Virtual Output** with address `http://<esp-ip>` and two **Virtual Output Commands**, each sent on value change:
    - connected to **Ca**: command `/loxone/set?ca=<v>`
    - connected to **Tp**: command `/loxone/set?tp=<v>`
-5. On the ESP:
+5. On the ESP: with the Loxone build from the [Quick start](#quick-start-flash-from-your-browser), enter the same values on its web page. In your own config:
 
 ```yaml
 twc-gateway:
