@@ -65,6 +65,7 @@ CONF_SETPOINT_TIMEOUT = "setpoint_timeout"
 CONF_MIN_ON_TIME = "min_on_time"
 CONF_MIN_OFF_TIME = "min_off_time"
 CONF_REASSERT_CURRENT = "reassert_current"
+CONF_RESTORE_CURRENT = "restore_current"
 CONF_USE_START_STOP = "use_start_stop_commands"
 CONF_QUERY_VIN = "query_vin"
 CONF_PHASES = "phases"
@@ -247,6 +248,7 @@ CONFIG_SCHEMA = cv.All(
             # Legacy: send the limit in every heartbeat instead of until the
             # TWC confirms it.
             cv.Optional(CONF_REASSERT_CURRENT, default=False): cv.boolean,
+            cv.Optional(CONF_RESTORE_CURRENT, default=False): cv.boolean,
             # Experimental FCB1/FCB2 start/stop frames on top of the 0 A limit.
             cv.Optional(CONF_USE_START_STOP, default=False): cv.boolean,
             cv.Optional(CONF_QUERY_VIN, default=True): cv.boolean,
@@ -357,6 +359,7 @@ async def to_code(config):
     cg.add(num_var.set_min_on_time(config[CONF_MIN_ON_TIME]))
     cg.add(num_var.set_min_off_time(config[CONF_MIN_OFF_TIME]))
     cg.add(num_var.set_reassert_current(config[CONF_REASSERT_CURRENT]))
+    cg.add(num_var.set_restore_current(config[CONF_RESTORE_CURRENT]))
     cg.add(num_var.set_use_start_stop_commands(config[CONF_USE_START_STOP]))
     cg.add(num_var.set_query_vin(config[CONF_QUERY_VIN]))
     cg.add(num_var.set_phases(config[CONF_PHASES]))

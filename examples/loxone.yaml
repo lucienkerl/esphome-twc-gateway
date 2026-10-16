@@ -6,8 +6,9 @@
 #   2. Virtual Text Input "TWC_API", wired to the block's API connector.
 #   3. A Loxone user "twc" with rights on that input only.
 #   4. Virtual Output "TWC" (address http://<this device>) with two
-#      Virtual Output Commands, both "send on value change":
-#        Ca -> /loxone/set?ca=<v>        Tp -> /loxone/set?tp=<v>
+#      Virtual Output Commands (GET):
+#        Ca (digital): ON /loxone/set?ca=1   OFF /loxone/set?ca=0
+#        Tp (analog):  ON /loxone/set?tp=<v.2>
 #
 # That's all: Vc/Cac/Cp/Mr are pushed into the block by this device, and
 # the block's Ca/Tp outputs come back here. Wallbox Manager, PV surplus,
@@ -63,7 +64,10 @@ twc-gateway:
   flow_control_pin: GPIO5 # transceiver DE/RE; omit for auto-direction boards
   max_current: 16  # SAFETY: what your circuit and breaker can carry
   min_current: 0
-  set_current: 0   # offer nothing until Loxone says otherwise
+  set_current: 0   # first boot: offer nothing until Loxone says otherwise
+  # Keep the last setpoint from Loxone across reboots: its Virtual Output
+  # only sends on change, so it wouldn't re-send an unchanged Tp.
+  restore_current: true
 
   # If Loxone is gone for 2 minutes (no successful push, no command),
   # fall back to 0 A. Use e.g. 6 to keep charging slowly instead.

@@ -187,9 +187,11 @@ Miniserver -> ESP   GET http://<esp>/loxone/set?ca=1
 1. Place a **Wallbox** block and name it `Wb` (or set `block:` to its name). Set its *Max. charging power* to `max_current × 3 × 230 V` (16 A → 11 kW) and leave *Min. charging power* at 4.16 kW (6 A × 3 × 230 V); for a single-phase car the minimum is 1.38 kW.
 2. Create a **Virtual Text Input** `TWC_API` and connect it to the block's **API** connector.
 3. Create a **user** (e.g. `twc`) and give it rights on `TWC_API` only.
-4. Create a **Virtual Output** with address `http://<esp-ip>` and two **Virtual Output Commands**, each sent on value change:
-   - connected to **Ca**: command `/loxone/set?ca=<v>`
-   - connected to **Tp**: command `/loxone/set?tp=<v>`
+4. Create a **Virtual Output** with address `http://<esp-ip>` (no user/password) and two **Virtual Output Commands**, HTTP method GET:
+   - **Ca**, *Use as digital output* ticked: command for ON `/loxone/set?ca=1`, command for OFF `/loxone/set?ca=0`. Connect it to the block's **Ca**.
+   - **Tp**, *Use as digital output* not ticked: command for ON `/loxone/set?tp=<v.2>` (kW, two decimals), command for OFF empty. Connect it to the block's **Tp**.
+
+   Test from a browser: `http://<esp-ip>/loxone/set?ca=1&tp=4.16` answers with `offer=6` once the TWC is linked.
 5. On the ESP: with the Loxone build from the [Quick start](#quick-start-flash-from-your-browser), enter the same values on its web page. In your own config:
 
 ```yaml
@@ -238,6 +240,7 @@ vc=1;cac=1;cp=7.36;mr=1234.567;a=10.65;offer=11;set=11;ca=1;st=1;ps=1;link=1;fai
 | `min_off_time` | `30s` | After going to 0 A, wait this long before offering current again. |
 | `use_start_stop_commands` | `false` | Also send the protocol's START/STOP_CHARGING frames when the offer goes above/to 0 A. Experimental. |
 | `reassert_current` | `false` | Send the current limit in every heartbeat instead of until the TWC confirms it (the pre-2.0 behaviour). |
+| `restore_current` | `false` | Keep the last requested current across reboots instead of starting at `set_current`. Use it with Loxone: a Virtual Output only sends on change, so an unchanged `Tp` isn't sent again after the ESP restarts. |
 | `query_vin` | `true` | Ask the TWC for the connected VIN every 30 s. |
 | `phases` | `3` | Phases assumed for kW ↔ A until the car shows how many it uses. |
 | `nominal_voltage` | `230` | Per-phase voltage for the kW → A conversion. |

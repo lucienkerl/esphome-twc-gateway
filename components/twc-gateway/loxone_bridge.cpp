@@ -16,6 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #ifdef USE_TWC_LOXONE
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -372,7 +373,13 @@ void LoxoneBridge::handleRequest(AsyncWebServerRequest *request) {
   bool has_a = request->hasParam("a");
   if (has_ca || has_tp || has_a) {
     int ca = has_ca ? atoi(request->getParam("ca")->value().c_str()) : -1;
-    float tp = has_tp ? strtof(request->getParam("tp")->value().c_str(), nullptr) : -1.0f;
+    float tp = -1.0f;
+    if (has_tp) {
+      // Accept a decimal comma too ("7,36"), in case <v> is formatted that way.
+      std::string v = request->getParam("tp")->value();
+      std::replace(v.begin(), v.end(), ',', '.');
+      tp = strtof(v.c_str(), nullptr);
+    }
     int a = has_a ? atoi(request->getParam("a")->value().c_str()) : -1;
     TWCGateway *parent = this->parent_;
     this->defer([parent, ca, tp, a]() {

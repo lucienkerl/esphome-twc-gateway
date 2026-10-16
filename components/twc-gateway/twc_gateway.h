@@ -60,6 +60,7 @@ class TWCGateway : public number::Number, public uart::UARTDevice, public Compon
   void set_min_off_time(uint32_t ms) { this->policy_config_.min_off_time_ms = ms; this->apply_policy_(); }
   void set_reassert_current(bool v) { this->policy_config_.reassert_every_heartbeat = v; this->apply_policy_(); }
   void set_initial_current(uint8_t a) { this->initial_current_ = a; }
+  void set_restore_current(bool v) { this->restore_current_ = v; }
   void set_allow_charging_switch(AllowChargingSwitch *sw) { this->allow_charging_switch_ = sw; }
 
   SUB_SENSOR(current)
@@ -126,6 +127,9 @@ class TWCGateway : public number::Number, public uart::UARTDevice, public Compon
   GPIOPin *flow_control_pin_{nullptr};
   AllowChargingSwitch *allow_charging_switch_{nullptr};
   uint8_t initial_current_{0};
+  bool restore_current_{false};
+  ESPPreferenceObject current_pref_;
+  uint8_t current_saved_{0xFF};
 
   uint32_t last_publish_ms_{0};
   bool measurements_dirty_{false};

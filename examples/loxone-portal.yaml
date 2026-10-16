@@ -77,7 +77,10 @@ twc-gateway:
   # Hard ceiling of this build. The actual limit is "Max Current" on the
   # web page (default 16 A) - set that to what your circuit can carry.
   max_current: 32
-  set_current: 0 # offer nothing until Loxone says otherwise
+  set_current: 0 # first boot: offer nothing until Loxone says otherwise
+  # Keep the last setpoint from Loxone across reboots: its Virtual Output
+  # only sends on change, so it wouldn't re-send an unchanged Tp.
+  restore_current: true
 
   # Loxone silent for 2 minutes (no successful push, no command) -> 0 A.
   setpoint_timeout: 120s

@@ -72,7 +72,19 @@ void TWCGateway::setup() {
 
   // Boot values don't count as commands - the setpoint watchdog still
   // expects a real controller to show up within setpoint_timeout.
-  this->master_.policy().set_initial_current(this->initial_current_);
+  uint8_t initial = this->initial_current_;
+  if (this->restore_current_) {
+    // A controller that only sends on change (a Loxone Virtual Output) would
+    // otherwise leave the TWC at set_current after a reboot until its value
+    // happens to change.
+    this->current_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash("twc-gateway-current"));
+    uint8_t saved;
+    if (this->current_pref_.load(&saved)) {
+      initial = saved;
+      this->current_saved_ = saved;
+    }
+  }
+  this->master_.policy().set_initial_current(initial);
   this->publish_state(this->master_.policy().requested_current());
 
   // AllowChargingSwitch is a plain switch_::Switch, not a Component, so
@@ -256,6 +268,11 @@ void TWCGateway::control(float value) {
 void TWCGateway::set_current_amps(int amps) {
   auto &policy = this->master_.policy();
   policy.set_requested_current(policy.clamp(amps), millis());
+  if (this->restore_current_ && policy.requested_current() != this->current_saved_) {
+    uint8_t value = policy.requested_current();
+    this->current_pref_.save(&value);
+    this->current_saved_ = value;
+  }
   // Publish what will actually be offered, not what was asked for: 3 A
   // becomes 6 A, anything above max_current becomes max_current.
   this->publish_state(policy.requested_current());
