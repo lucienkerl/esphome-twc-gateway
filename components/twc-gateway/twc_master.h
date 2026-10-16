@@ -86,6 +86,8 @@ enum class MasterEvent : uint8_t {
   OTHER_PRIMARY_SEEN,    // someone else is acting as primary on this bus
   EXTRA_SECONDARY_SEEN,  // a second secondary tried to link - ignored
   HEARTBEAT,             // any secondary heartbeat (actual current etc.)
+  START_STOP_SENT,       // a START/STOP_CHARGING frame went out (other_id: 1 start, 0 stop)
+  UNKNOWN_FRAME,         // a valid frame we don't decode (other_id: its command)
 };
 
 /// Turns the TWC's coarse lifetime counter (whole kWh) into a monotonic
@@ -153,6 +155,8 @@ class TwcMaster {
   bool vehicle_connected() const;
 
   uint8_t offered_current() const { return this->offered_; }
+  /// The heartbeat command and limit most recently sent to the secondary.
+  const HeartbeatCommand &last_heartbeat() const { return this->last_heartbeat_; }
   bool failsafe_active(uint32_t now_ms) const { return this->policy_.watchdog_expired(now_ms); }
   EnergyMeter &energy() { return this->energy_; }
   const EnergyMeter &energy() const { return this->energy_; }
@@ -184,6 +188,7 @@ class TwcMaster {
   bool aux_pending_{false};
   uint32_t aux_due_ms_{0};
   uint8_t offered_{0};
+  HeartbeatCommand last_heartbeat_{};
 
   uint32_t next_plug_ms_{0};
   uint32_t next_power_ms_{0};

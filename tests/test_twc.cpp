@@ -464,6 +464,26 @@ static void test_master_timeout_and_values() {
   CHECK_EQ(h.master.power_w(), 0.0);
 }
 
+static void test_master_diagnostics() {
+  printf("master diagnostics\n");
+  PolicyConfig pc;
+  pc.max_current = 16;
+  Harness h(MasterConfig{}, pc);
+  h.run_until(11000);
+  h.rx(secondary_linkready(0x1234, 3200));
+  h.master.policy().set_requested_current(10, h.now);
+  h.run_until(12000);
+  // The last heartbeat sent is visible, so its limit can be logged next to
+  // the one the TWC reports back.
+  CHECK_EQ(h.master.last_heartbeat().command, proto::HB_SET_LIMIT_V2);
+  CHECK_EQ(h.master.last_heartbeat().centiamps, 1000);
+
+  // A frame we don't decode, from our secondary, is reported - not dropped.
+  CHECK(!h.has_event(MasterEvent::UNKNOWN_FRAME));
+  h.rx(with_checksum({0xFD, 0xA0, 0x12, 0x34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}));
+  CHECK(h.has_event(MasterEvent::UNKNOWN_FRAME));
+}
+
 static void test_master_heartbeat_values() {
   printf("master heartbeat values\n");
   PolicyConfig pc;
@@ -602,6 +622,7 @@ int main() {
   test_policy_min_on_off();
   test_master_startup_and_link();
   test_master_timeout_and_values();
+  test_master_diagnostics();
   test_master_heartbeat_values();
   test_master_passive();
   test_master_start_stop();

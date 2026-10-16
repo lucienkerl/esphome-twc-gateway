@@ -24,12 +24,17 @@ namespace esphome {
 namespace twc_gateway {
 
 static const char *const TAG = "twc-gateway";
+// Every frame on the bus, as hex. Set this tag to INFO in logger: logs: to
+// silence it; it is the first thing to look at when the TWC misbehaves.
+static const char *const TAG_FRAMES = "twc-gateway.frames";
 
 // Measurements are published at most this often (heartbeats arrive ~1/s).
 static constexpr uint32_t PUBLISH_INTERVAL_MS = 1000;
 // Persist the energy meter every 0.1 kWh (~10 flash writes per kWh charged).
 static constexpr double ENERGY_SAVE_STEP_KWH = 0.1;
 static constexpr uint32_t WARN_INTERVAL_MS = 60000;
+// One INFO status line this often while linked.
+static constexpr uint32_t STATUS_LOG_INTERVAL_MS = 10000;
 
 namespace {
 
@@ -115,8 +120,11 @@ void TWCGateway::loop() {
   uint32_t now = millis();
   uint8_t byte;
   while (this->available() && this->read_byte(&byte)) {
-    if (this->decoder_.feed(byte))
+    if (this->decoder_.feed(byte)) {
+      ESP_LOGD(TAG_FRAMES, "RX %s",
+               format_hex_pretty(this->decoder_.frame(), this->decoder_.frame_length()).c_str());
       this->master_.on_frame(this->decoder_.frame(), this->decoder_.frame_length(), now);
+    }
   }
   if (this->decoder_.checksum_errors() != this->last_checksum_errors_) {
     this->last_checksum_errors_ = this->decoder_.checksum_errors();
@@ -125,6 +133,7 @@ void TWCGateway::loop() {
   }
 
   this->master_.tick(now);
+  this->log_diagnostics_(now);
 
   if (this->measurements_dirty_ && now - this->last_publish_ms_ >= PUBLISH_INTERVAL_MS) {
     this->last_publish_ms_ = now;
@@ -137,6 +146,7 @@ void TWCGateway::loop() {
 }
 
 void TWCGateway::transmit_(const std::vector<uint8_t> &frame) {
+  ESP_LOGD(TAG_FRAMES, "TX %s", format_hex_pretty(frame).c_str());
   if (this->flow_control_pin_ != nullptr)
     this->flow_control_pin_->digital_write(true);
   this->write_array(frame.data(), frame.size());
@@ -201,11 +211,61 @@ void TWCGateway::on_event_(MasterEvent event, const SecondaryInfo &info, uint16_
       }
       break;
 
+    case MasterEvent::START_STOP_SENT:
+      ESP_LOGI(TAG, "Sent %s_CHARGING to %04X", other_id ? "START" : "STOP", info.id);
+      break;
+
+    case MasterEvent::UNKNOWN_FRAME:
+      if (other_id != this->last_unknown_command_ || now - this->last_unknown_log_ms_ > WARN_INTERVAL_MS) {
+        this->last_unknown_command_ = other_id;
+        this->last_unknown_log_ms_ = now;
+        ESP_LOGI(TAG, "TWC %04X sent a frame this gateway doesn't decode: command %04X", info.id, other_id);
+      }
+      break;
+
     case MasterEvent::POWER_STATUS:
     case MasterEvent::HEARTBEAT:
       this->measurements_dirty_ = true;
       break;
   }
+}
+
+void TWCGateway::log_diagnostics_(uint32_t now) {
+  const auto &s = this->master_.secondary();
+  if (!s.linked) {
+    this->logged_hb_command_ = 0xFF;
+    this->logged_hb_centiamps_ = 0xFFFF;
+    this->logged_reported_centiamps_ = 0xFFFF;
+    return;
+  }
+  const auto &hb = this->master_.last_heartbeat();
+  const auto &policy = this->master_.policy();
+
+  // What we tell the TWC, and what it says it is offering the car: these two
+  // disagreeing is the most likely reason a plugged-in car doesn't charge.
+  if (hb.command != this->logged_hb_command_ || hb.centiamps != this->logged_hb_centiamps_) {
+    this->logged_hb_command_ = hb.command;
+    this->logged_hb_centiamps_ = hb.centiamps;
+    ESP_LOGI(TAG, "Heartbeat to %04X now command %02X, limit %.2f A (offered %u A)", s.id, hb.command,
+             hb.centiamps / 100.0f, this->master_.offered_current());
+  }
+  if (s.reported_max_centiamps != this->logged_reported_centiamps_) {
+    this->logged_reported_centiamps_ = s.reported_max_centiamps;
+    ESP_LOGI(TAG, "TWC %04X now reports limit %.2f A (state %u)", s.id, s.reported_max_centiamps / 100.0f, s.state);
+  }
+
+  if (now - this->last_status_log_ms_ < STATUS_LOG_INTERVAL_MS)
+    return;
+  this->last_status_log_ms_ = now;
+  ESP_LOGI(TAG,
+           "Status %04X: state %u (raw %u), plug %d, actual %.2f A, TWC limit %.2f A | sent cmd %02X %.2f A, "
+           "offered %u A, requested %u A, allowed %s, failsafe %s | phases %.1f/%.1f/%.1f A, %u/%u/%u V | "
+           "last RX %u ms ago",
+           s.id, s.vehicle_state, s.state, s.plug_state, s.actual_centiamps / 100.0f,
+           s.reported_max_centiamps / 100.0f, hb.command, hb.centiamps / 100.0f, this->master_.offered_current(),
+           policy.requested_current(), YESNO(policy.enabled()), YESNO(this->master_.failsafe_active(now)),
+           s.half_amps[0] / 2.0f, s.half_amps[1] / 2.0f, s.half_amps[2] / 2.0f, s.voltage[0], s.voltage[1],
+           s.voltage[2], (unsigned) (now - s.last_rx_ms));
 }
 
 void TWCGateway::publish_measurements_() {

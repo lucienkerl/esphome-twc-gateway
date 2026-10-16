@@ -320,6 +320,15 @@ Some TWCs report ~0.25 A while idle, hence the 1 A threshold.
 
 Link changes, vehicle state changes (`Vehicle state changed for ...`) and plug changes (`Plug state changed for ...`) are logged at `INFO` under the `twc-gateway` tag, Loxone push problems under `twc-gateway.loxone`. To see raw bytes on the wire, add `debug:` to `uart:`.
 
+For a car that is plugged in but won't charge, these `INFO` lines under `twc-gateway` tell most of the story:
+
+- `Status ABCD: state 4 (raw 9), plug 3, actual 0.00 A, TWC limit 16.00 A | sent cmd 09 16.00 A, offered 16 A, ...` every 10 s while linked.
+- `Heartbeat to ABCD now command 09, limit 16.00 A` whenever the command or limit we send changes, and `TWC ABCD now reports limit ...` whenever the limit the TWC echoes changes. If the two disagree for long, the TWC hasn't accepted our limit.
+- `Sent START_CHARGING/STOP_CHARGING` (only with `use_start_stop_commands`), and any frame from the TWC that this gateway doesn't decode, with its command.
+- `/loxone/set: ca=.. tp=.. a=..` for every command from Loxone (under `twc-gateway.loxone`).
+
+Every frame on the bus is logged as hex at `DEBUG` under `twc-gateway.frames` (`RX`/`TX`). `examples/loxone-portal.yaml` turns this on; set `twc-gateway.frames: INFO` under `logger: logs:` to silence it.
+
 ## Known limitations & safety notes
 
 - **The protocol is reverse-engineered.** Treat every command as capable of putting the TWC into an unrecoverable state until proven otherwise on your hardware/firmware. Don't invent your own frames.

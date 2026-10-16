@@ -156,6 +156,7 @@ void TwcMaster::send_heartbeat_(uint32_t now_ms) {
   this->offered_ = amps;
 
   HeartbeatCommand hb = this->policy_.heartbeat_command(amps, report);
+  this->last_heartbeat_ = hb;
   this->send_(proto::encode_heartbeat(this->config_.twc_id, s.id, hb.command, hb.centiamps, s.protocol));
 
   this->last_heartbeat_ms_ = now_ms;
@@ -175,6 +176,7 @@ void TwcMaster::send_aux_(uint32_t now_ms) {
     if (s.start_stop_last_sent != desired) {
       s.start_stop_last_sent = desired;
       this->send_(proto::encode_start_stop(desired == 1, me, s.id));
+      this->emit_(MasterEvent::START_STOP_SENT, desired);
       return;
     }
   }
@@ -228,6 +230,7 @@ void TwcMaster::lose_(uint32_t now_ms) {
   uint16_t id = this->secondary_.id;
   this->secondary_ = SecondaryInfo{};
   this->offered_ = 0;
+  this->last_heartbeat_ = HeartbeatCommand{};
   this->aux_pending_ = false;
   this->emit_(MasterEvent::LOST, id);
 }
@@ -241,6 +244,11 @@ void TwcMaster::on_frame(const uint8_t *frame, size_t length, uint32_t now_ms) {
 
   switch (msg.type) {
     case proto::MessageType::UNKNOWN:
+      // Only from our own secondary: anything the TWC says that we don't
+      // understand may be exactly what explains a car that won't charge.
+      if (this->secondary_.linked && msg.src == this->secondary_.id)
+        this->emit_(MasterEvent::UNKNOWN_FRAME, msg.command);
+      return;
     case proto::MessageType::INVALID:
       return;
 

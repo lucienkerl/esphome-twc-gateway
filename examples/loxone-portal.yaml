@@ -46,8 +46,21 @@ wifi:
 
 captive_portal:
 
+# DEBUG for the gateway's own tags: a status line every 10 s, every change
+# of the limit sent to / reported by the TWC, every /loxone/set, and every
+# frame on the bus as hex (twc-gateway.frames, ~4 lines/s). Set that tag to
+# INFO once things work. Entity publishes stay at INFO, they'd drown the rest.
 logger:
-  level: INFO
+  level: DEBUG
+  logs:
+    twc-gateway.frames: DEBUG
+    sensor: INFO
+    binary_sensor: INFO
+    text_sensor: INFO
+    number: INFO
+    switch: INFO
+    text: INFO
+    web_server: INFO
 
 # Firmware updates: upload a new *.ota.bin on the web page, or use the
 # ESPHome CLI.

@@ -126,6 +126,7 @@ class TWCGateway : public number::Number, public uart::UARTDevice, public Compon
   void publish_identity_();
   void publish_derived_();
   void save_energy_();
+  void log_diagnostics_(uint32_t now);
 
   TwcMaster master_{};
   proto::SlipDecoder decoder_{};
@@ -145,6 +146,14 @@ class TWCGateway : public number::Number, public uart::UARTDevice, public Compon
   bool other_primary_warned_{false};
   bool extra_secondary_warned_{false};
   uint32_t last_checksum_errors_{0};
+
+  // Diagnostics (see log_diagnostics_()).
+  uint32_t last_status_log_ms_{0};
+  uint8_t logged_hb_command_{0xFF};
+  uint16_t logged_hb_centiamps_{0xFFFF};
+  uint16_t logged_reported_centiamps_{0xFFFF};
+  uint16_t last_unknown_command_{0};
+  uint32_t last_unknown_log_ms_{0};
 
   ESPPreferenceObject energy_pref_;
   double energy_saved_{-1};

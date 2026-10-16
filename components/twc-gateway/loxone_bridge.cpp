@@ -383,6 +383,7 @@ void LoxoneBridge::handleRequest(AsyncWebServerRequest *request) {
     int a = has_a ? atoi(request->getParam("a")->value().c_str()) : -1;
     TWCGateway *parent = this->parent_;
     this->defer([parent, ca, tp, a]() {
+      ESP_LOGI(TAG, "/loxone/set: ca=%d tp=%.2f a=%d (-1 = not given)", ca, tp, a);
       if (ca >= 0)
         parent->set_charging_enabled(ca != 0);
       if (tp >= 0)
