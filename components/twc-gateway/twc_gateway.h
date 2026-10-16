@@ -46,7 +46,13 @@ class TWCGateway : public number::Number, public uart::UARTDevice, public Compon
   void set_passive_mode(bool passive) { this->master_config_.passive = passive; }
   void set_flow_control_pin(GPIOPin *pin) { this->flow_control_pin_ = pin; }
   void set_query_vin(bool v) { this->master_config_.query_vin = v; }
-  void set_use_start_stop_commands(bool v) { this->master_config_.use_start_stop_commands = v; }
+  // Safe at runtime too (e.g. from a template switch): takes effect with
+  // the next frame, and re-sends START/STOP once when turned on.
+  void set_use_start_stop_commands(bool v) {
+    this->master_config_.use_start_stop_commands = v;
+    this->master_.configure(this->master_config_);
+    this->master_.rearm_start_stop();
+  }
   void set_phases(uint8_t phases) { this->master_config_.phases = phases; }
   void set_nominal_voltage(float v) { this->master_config_.nominal_voltage = v; }
 

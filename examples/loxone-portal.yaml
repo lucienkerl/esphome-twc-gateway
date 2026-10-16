@@ -29,7 +29,10 @@ esphome:
     priority: -100
     then:
       - script.execute: apply_loxone_settings
-      - lambda: id(twc).set_max_current((uint8_t) id(max_current_limit).state);
+      - lambda: |-
+          id(twc).set_max_current((uint8_t) id(max_current_limit).state);
+          id(twc).set_use_start_stop_commands(id(start_stop_commands).state);
+          id(twc).set_reassert_current(id(reassert_current).state);
 
 esp32:
   board: m5stack-atom
@@ -136,6 +139,33 @@ number:
     entity_category: config
     set_action:
       - lambda: id(twc).set_max_current((uint8_t) x);
+
+# Protocol variants, switchable without reflashing. Both default to ON,
+# the behaviour the pre-rewrite firmware was verified with in the field:
+# START_CHARGING after a StopCharging, and the limit in every heartbeat.
+switch:
+  - platform: template
+    name: "Send Start/Stop Commands"
+    id: start_stop_commands
+    icon: mdi:play-pause
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    turn_on_action:
+      - lambda: id(twc).set_use_start_stop_commands(true);
+    turn_off_action:
+      - lambda: id(twc).set_use_start_stop_commands(false);
+  - platform: template
+    name: "Reassert Current Every Heartbeat"
+    id: reassert_current
+    icon: mdi:repeat
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    turn_on_action:
+      - lambda: id(twc).set_reassert_current(true);
+    turn_off_action:
+      - lambda: id(twc).set_reassert_current(false);
 
 script:
   - id: apply_loxone_settings
