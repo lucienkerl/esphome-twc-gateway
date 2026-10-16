@@ -10,7 +10,9 @@
 #      in the page that opens (or browse to http://192.168.4.1/).
 #   3. Open http://<device IP>/ and fill in under "Loxone":
 #      Miniserver IP, User, Password, API Input (default TWC_API) and
-#      Block (default Wb). Takes effect immediately and survives reboots.
+#      Block (default Wb) for the API connector - or Loxone UDP Port for a
+#      Virtual UDP Input (clear API Input to use UDP only). Takes effect
+#      immediately and survives reboots.
 #   4. Set "Max Current" to what your circuit and breaker can carry.
 #
 # Built for an M5Stack Atom Lite with the Atomic RS485 Base (the pins
@@ -152,6 +154,22 @@ number:
     entity_category: config
     set_action:
       - lambda: id(twc).set_max_current((uint8_t) x);
+  # Port of a Virtual UDP Input on the Miniserver; 0 = no UDP. The same line
+  # as GET /loxone goes there as one datagram, see the README.
+  - platform: template
+    name: "Loxone UDP Port"
+    id: lox_udp_port
+    icon: mdi:ip-network-outline
+    mode: box
+    min_value: 0
+    max_value: 65535
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - script.execute: apply_loxone_settings
 
 # Protocol variants, switchable without reflashing. Both default to ON,
 # the behaviour the pre-rewrite firmware was verified with in the field:
@@ -192,6 +210,7 @@ script:
           std::string block = id(lox_block).state;
           lox->set_block(block.empty() ? "Wb" : block);
           lox->set_vc_input(id(lox_vc_input).state);
+          lox->set_udp_port((uint16_t) id(lox_udp_port).state);
           lox->reset_push();
 
 # on_value, not set_action: set_action runs before .state is updated, so the

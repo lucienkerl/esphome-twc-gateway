@@ -221,6 +221,26 @@ vc=1;cac=1;cp=7.36;mr=1234.567;a=10.65;offer=11;twc=11.00;set=11;ca=1;st=1;ps=1;
 
 `a` actual current, `offer` currently offered amps, `twc` the limit the TWC reports back, `set` requested amps, `ca` charging allowed, `st` vehicle state, `ps` plug state, `link` TWC linked, `failsafe` watchdog expired, `ms` last push to the Miniserver succeeded.
 
+### UDP instead of the API connector
+
+Instead of (or as well as) the API connector, the gateway can send its values to a **Virtual UDP Input**: the same line as `GET /loxone`, as one datagram, on every change (at most every `udp_interval`, 1 s) and at least every 10 s.
+
+1. Create a **Virtual UDP Input**, *Sender IP address* = the gateway's IP, *UDP receive port* e.g. `7000`.
+2. Add one **Virtual UDP Input Command** per value and connect it to the Wallbox block's input of the same name:
+
+   | Command | Command recognition | Block input |
+   |---|---|---|
+   | Vc | `vc=\v` | Vc |
+   | Cac | `cac=\v` | Cac |
+   | Cp | `cp=\v` | Cp (kW) |
+   | Mr | `mr=\v` | Mr (kWh) |
+
+   Further fields (`a=\v` actual current, `offer=\v`, `twc=\v`, …) can be picked up the same way for display.
+3. Disconnect `TWC_API` from the block's API connector (or delete it), so the block isn't fed twice.
+4. On the ESP: enter the port as **Loxone UDP Port** on its web page and clear **Loxone API Input**. In your own config: `udp_port: 7000` under `loxone:`, without `api_input`.
+
+Ca/Tp still come back through the Virtual Output. With UDP only, nothing proves the Miniserver alive, so every `keepalive` (30 s) the gateway sends `GET /jdev/cfg/version` without credentials; any HTTP answer feeds the setpoint watchdog and sets `ms=1`.
+
 ## Configuration reference
 
 ### `twc-gateway:` options

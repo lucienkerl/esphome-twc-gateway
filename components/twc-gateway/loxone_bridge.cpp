@@ -35,6 +35,12 @@ static const char *const TAG = "twc-gateway.loxone";
 
 static constexpr uint32_t HTTP_TIMEOUT_MS = 3000;
 static constexpr size_t MAX_QUEUE = 4;
+// The UDP datagram goes out on change (at most every udp_interval) and at
+// least this often, so a Miniserver restart picks the values up again.
+static constexpr uint32_t UDP_KEEPALIVE_MS = 10000;
+// With UDP only, nothing comes back from the Miniserver; any HTTP answer to
+// this request (sent without credentials) proves it alive for the watchdog.
+static constexpr const char *ALIVE_PATH = "/jdev/cfg/version";
 
 namespace {
 
@@ -98,6 +104,9 @@ void LoxoneBridge::reset_push() {
   this->pushed_once_ = false;
   this->consecutive_failures_ = 0;
   this->miniserver_ok_ = false;
+  this->udp_last_text_.clear();
+  this->udp_sent_once_ = false;
+  this->udp_failures_ = 0;
   struct in_addr addr {};
   if (!this->host_.empty() && inet_aton(this->host_.c_str(), &addr) == 0) {
     ESP_LOGW(TAG, "Miniserver '%s' is not an IPv4 address, push disabled", this->host_.c_str());
@@ -107,8 +116,10 @@ void LoxoneBridge::reset_push() {
     ESP_LOGI(TAG, "Push to http://%s:%u/dev/sps/io/%s/ (block '%s')", this->host_.c_str(), this->port_,
              this->api_input_.c_str(), this->block_.c_str());
   } else {
-    ESP_LOGI(TAG, "Push disabled (no miniserver/api_input set)");
+    ESP_LOGI(TAG, "API connector push disabled (no miniserver/api_input set)");
   }
+  if (this->udp_enabled_())
+    ESP_LOGI(TAG, "UDP to %s:%u", this->host_.c_str(), this->udp_port_);
 }
 
 void LoxoneBridge::setup() {
@@ -131,6 +142,12 @@ void LoxoneBridge::dump_config() {
                   YESNO(this->feed_watchdog_));
   } else {
     ESP_LOGCONFIG(TAG, "  Push: disabled (no miniserver/api_input configured)");
+  }
+  if (this->udp_enabled_()) {
+    ESP_LOGCONFIG(TAG, "  UDP: %s:%u, every change (min %u ms) and every %u s", this->host_.c_str(),
+                  this->udp_port_, (unsigned) this->udp_interval_ms_, (unsigned) (UDP_KEEPALIVE_MS / 1000));
+  } else {
+    ESP_LOGCONFIG(TAG, "  UDP: disabled");
   }
 }
 
@@ -178,6 +195,9 @@ void LoxoneBridge::loop() {
     this->status_line_ = std::move(line);
   }
 
+  if (this->udp_enabled_() && network::is_connected())
+    this->send_udp_(now);
+
   if (this->http_state_ != HttpState::IDLE) {
     this->poll_request_();
     return;
@@ -186,8 +206,19 @@ void LoxoneBridge::loop() {
     this->start_request_();
     return;
   }
-  if (!this->push_enabled_() || !network::is_connected())
+  if (!network::is_connected())
     return;
+  if (!this->push_enabled_()) {
+    // UDP only: prove the Miniserver alive over HTTP now and then, so the
+    // setpoint watchdog doesn't trip just because Ca/Tp haven't changed.
+    if (this->udp_enabled_() && this->feed_watchdog_ &&
+        (!this->pushed_once_ || now - this->last_push_ms_ >= this->keepalive_ms_)) {
+      this->queue_get_(ALIVE_PATH, true);
+      this->last_push_ms_ = now;
+      this->pushed_once_ = true;
+    }
+    return;
+  }
 
   std::string text = this->build_set_text_();
   int vc = this->parent_->is_vehicle_connected() ? 1 : 0;
@@ -214,14 +245,61 @@ void LoxoneBridge::loop() {
 }
 
 void LoxoneBridge::queue_push_(const std::string &input, const std::string &text) {
+  this->queue_get_("/dev/sps/io/" + encode_path_segment(input) + "/" + encode_path_segment(text));
+}
+
+void LoxoneBridge::queue_get_(const std::string &path, bool probe) {
   if (this->queue_.size() >= MAX_QUEUE)
     this->queue_.erase(this->queue_.begin());
-  this->queue_.push_back({input, text});
+  this->queue_.push_back({path, probe});
+}
+
+void LoxoneBridge::send_udp_(uint32_t now) {
+  // Same line as GET /loxone, so the Virtual UDP Input's commands
+  // ("vc=\v", "cp=\v", ...) work for both.
+  std::string text = this->build_status_line_();
+  bool changed = text != this->udp_last_text_;
+  bool due = !this->udp_sent_once_ || now - this->udp_last_ms_ >= UDP_KEEPALIVE_MS ||
+             (changed && now - this->udp_last_ms_ >= this->udp_interval_ms_);
+  if (!due)
+    return;
+
+  struct sockaddr_in addr {};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(this->udp_port_);
+  if (inet_aton(this->host_.c_str(), &addr.sin_addr) == 0)
+    return;
+  if (this->udp_fd_ < 0) {
+    this->udp_fd_ = lwip_socket(AF_INET, SOCK_DGRAM, 0);
+    if (this->udp_fd_ < 0) {
+      ESP_LOGW(TAG, "UDP socket() failed");
+      return;
+    }
+  }
+  // Marks the attempt either way, so a failing send is retried at the
+  // normal cadence instead of in every loop.
+  this->udp_last_text_ = text;
+  this->udp_last_ms_ = now;
+  this->udp_sent_once_ = true;
+  ssize_t n = lwip_sendto(this->udp_fd_, text.data(), text.size(), MSG_DONTWAIT,
+                          reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr));
+  if (n == static_cast<ssize_t>(text.size())) {
+    if (this->udp_failures_ > 0)
+      ESP_LOGI(TAG, "UDP to %s:%u works again", this->host_.c_str(), this->udp_port_);
+    this->udp_failures_ = 0;
+    ESP_LOGV(TAG, "UDP %s", text.c_str());
+    return;
+  }
+  this->udp_failures_++;
+  if (this->udp_failures_ == 1 || this->udp_failures_ % 10 == 0)
+    ESP_LOGW(TAG, "UDP to %s:%u failed (%u in a row), errno %d", this->host_.c_str(), this->udp_port_,
+             (unsigned) this->udp_failures_, errno);
 }
 
 void LoxoneBridge::start_request_() {
   Pending p = std::move(this->queue_.front());
   this->queue_.erase(this->queue_.begin());
+  this->request_is_probe_ = p.probe;
 
   struct sockaddr_in addr {};
   addr.sin_family = AF_INET;
@@ -239,8 +317,8 @@ void LoxoneBridge::start_request_() {
   int flags = lwip_fcntl(this->fd_, F_GETFL, 0);
   lwip_fcntl(this->fd_, F_SETFL, flags | O_NONBLOCK);
 
-  this->request_ = "GET /dev/sps/io/" + encode_path_segment(p.input) + "/" + encode_path_segment(p.text) +
-                   " HTTP/1.0\r\nHost: " + this->host_ + "\r\n" + this->auth_header_ + "Connection: close\r\n\r\n";
+  this->request_ = "GET " + p.path + " HTTP/1.0\r\nHost: " + this->host_ + "\r\n" +
+                   (p.probe ? std::string() : this->auth_header_) + "Connection: close\r\n\r\n";
   this->request_sent_ = 0;
   this->response_.clear();
   this->request_started_ms_ = millis();
@@ -315,7 +393,7 @@ void LoxoneBridge::poll_request_() {
     int code = 0;
     if (sscanf(this->response_.c_str(), "HTTP/%*s %d", &code) != 1)
       code = 0;
-    if (code == 200) {
+    if (code == 200 || (this->request_is_probe_ && code > 0)) {
       this->finish_request_(true, nullptr);
     } else if (code == 401) {
       this->finish_request_(false, "401 - check username/password and the user's rights on the input");

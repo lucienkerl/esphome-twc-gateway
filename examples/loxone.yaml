@@ -109,3 +109,6 @@ twc-gateway:
     # create a Virtual Input "TWC_Vc", wire it to the block's Vc input and
     # uncomment this - Vc is then pushed there instead:
     # vc_input: TWC_Vc
+    # Or/additionally send to a Virtual UDP Input (see the README); with
+    # UDP only, drop api_input:
+    # udp_port: 7000

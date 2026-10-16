@@ -88,6 +88,8 @@ CONF_VC_INPUT = "vc_input"
 CONF_MIN_INTERVAL = "min_interval"
 CONF_KEEPALIVE = "keepalive"
 CONF_FEED_WATCHDOG = "feed_watchdog"
+CONF_UDP_PORT = "udp_port"
+CONF_UDP_INTERVAL = "udp_interval"
 
 ICON_CURRENT_AC = "mdi:current-ac"
 ICON_CAR = "mdi:car"
@@ -211,6 +213,9 @@ LOXONE_SCHEMA = cv.Schema(
         cv.Optional(CONF_MIN_INTERVAL, default="5s"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_KEEPALIVE, default="30s"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_FEED_WATCHDOG, default=True): cv.boolean,
+        # Virtual UDP Input on the Miniserver; works with or without api_input.
+        cv.Optional(CONF_UDP_PORT): cv.port,
+        cv.Optional(CONF_UDP_INTERVAL, default="1s"): cv.positive_time_period_milliseconds,
     }
 )
 
@@ -219,10 +224,11 @@ def validate_loxone(config):
     lox = config.get(CONF_LOXONE)
     if lox is None:
         return config
-    if (CONF_MINISERVER in lox) != (CONF_API_INPUT in lox):
+    has_target = CONF_API_INPUT in lox or CONF_UDP_PORT in lox
+    if (CONF_MINISERVER in lox) != has_target:
         raise cv.Invalid(
-            f"{CONF_LOXONE}: set both {CONF_MINISERVER} and {CONF_API_INPUT} to push to the "
-            "Miniserver, or neither to only serve /loxone"
+            f"{CONF_LOXONE}: set {CONF_MINISERVER} together with {CONF_API_INPUT} and/or "
+            f"{CONF_UDP_PORT} to push to the Miniserver, or none of them to only serve /loxone"
         )
     return config
 
@@ -403,7 +409,11 @@ async def to_code(config):
         await cg.register_component(bridge, lox)
         if CONF_MINISERVER in lox:
             cg.add(bridge.set_miniserver(str(lox[CONF_MINISERVER]), lox[CONF_PORT]))
-            cg.add(bridge.set_api_input(lox[CONF_API_INPUT]))
+            if CONF_API_INPUT in lox:
+                cg.add(bridge.set_api_input(lox[CONF_API_INPUT]))
+            if CONF_UDP_PORT in lox:
+                cg.add(bridge.set_udp_port(lox[CONF_UDP_PORT]))
+        cg.add(bridge.set_udp_interval(lox[CONF_UDP_INTERVAL]))
         cg.add(bridge.set_credentials(lox[CONF_USERNAME], lox[CONF_PASSWORD]))
         cg.add(bridge.set_block(lox[CONF_BLOCK]))
         if CONF_VC_INPUT in lox:
