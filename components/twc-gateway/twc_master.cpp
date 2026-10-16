@@ -35,6 +35,9 @@ constexpr uint16_t CHARGING_CENTIAMPS = 100;
 
 constexpr uint32_t STARTUP_INTERVAL_MS = 1000;
 constexpr uint8_t STARTUP_MESSAGES = 5;
+// Above this, an echo-only heartbeat counts as "charging" (idle TWCs can
+// report ~0.25 A).
+constexpr uint16_t ECHO_CHARGING_CENTIAMPS = 100;
 constexpr uint32_t PLUG_INTERVAL_MS = 3000;
 constexpr uint32_t POWER_INTERVAL_MS = 5000;
 constexpr uint32_t IDENTITY_RETRY_MS = 5000;
@@ -306,16 +309,27 @@ void TwcMaster::handle_secondary_(const proto::Message &msg, uint32_t now_ms) {
       s.actual_centiamps = msg.actual_centiamps;
       // 0x09 is only the echo of our own limit command, not a vehicle
       // status; it interleaves with the real one and must not mask it.
-      if (msg.state != proto::ST_LIMIT_ECHO && msg.state != s.vehicle_state) {
+      // With reassert_current every heartbeat is an echo and the real status
+      // never comes through, so infer charging / not charging from the
+      // actual current instead.
+      uint8_t st = msg.state;
+      if (st == proto::ST_LIMIT_ECHO) {
+        if (msg.actual_centiamps > ECHO_CHARGING_CENTIAMPS) {
+          st = proto::ST_CHARGING;
+        } else if (s.vehicle_state == proto::ST_CHARGING) {
+          st = proto::ST_PLUGGED_READY;
+        }
+      }
+      if (st != proto::ST_LIMIT_ECHO && st != s.vehicle_state) {
         auto engaged = [](uint8_t st) {
           return st == proto::ST_CHARGING || st == proto::ST_PLUGGED_DO_NOT_CHARGE ||
                  st == proto::ST_PLUGGED_READY || st == proto::ST_STARTING;
         };
         // A new charging session (car plugged in / woke up): re-send the
         // start/stop command, it doesn't carry over from the last session.
-        if (!engaged(s.vehicle_state) && engaged(msg.state))
+        if (!engaged(s.vehicle_state) && engaged(st))
           s.start_stop_last_sent = -1;
-        s.vehicle_state = msg.state;
+        s.vehicle_state = st;
         this->emit_(MasterEvent::STATE_CHANGED);
       }
       this->energy_.on_power(this->power_w(), now_ms);

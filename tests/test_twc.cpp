@@ -455,6 +455,16 @@ static void test_master_timeout_and_values() {
   h.rx(secondary_heartbeat(0x1234, 0xAB32, 0x09, 1000, 1532));
   CHECK_EQ(h.master.secondary().vehicle_state, 1);
 
+  // Echo-only heartbeats (reassert_current): charging is inferred from the
+  // actual current, so the state doesn't stick at "ready" or "charging".
+  h.rx(secondary_heartbeat(0x1234, 0xAB32, 0x04, 1000, 0));
+  CHECK_EQ(h.master.secondary().vehicle_state, 4);
+  h.rx(secondary_heartbeat(0x1234, 0xAB32, 0x09, 1000, 1350));
+  CHECK_EQ(h.master.secondary().vehicle_state, 1);
+  h.rx(secondary_heartbeat(0x1234, 0xAB32, 0x09, 1000, 25));
+  CHECK_EQ(h.master.secondary().vehicle_state, 4);
+  h.rx(secondary_heartbeat(0x1234, 0xAB32, 0x01, 1000, 1532));
+
   // Silence for > 26 s drops the link and all values.
   h.run_until(h.now + 27000);
   CHECK(h.has_event(MasterEvent::LOST));
