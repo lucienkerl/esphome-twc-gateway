@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <VirtualInUdp Title="TWC Gateway" Comment="ESPHome TWC Gateway, sendet vc=..;cac=..;cp=..;mr=.." Address="" Port="7000">
 	<Info templateType="1" minVersion="12000000"/>
-	<VirtualInUdpCmd Title="TWC Vc" Comment="Fahrzeug verbunden → Wb2 Vc" Address="" Check="vc=\v" Signed="true" Analog="false" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="" HintText=""/>
-	<VirtualInUdpCmd Title="TWC Cac" Comment="Laden aktiv → Wb2 Cac" Address="" Check="cac=\v" Signed="true" Analog="false" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="" HintText=""/>
+	<VirtualInUdpCmd Title="TWC Vc" Comment="Fahrzeug verbunden → Wb2 Vc" Address="" Check="vc=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="&lt;v&gt;" HintText=""/>
+	<VirtualInUdpCmd Title="TWC Cac" Comment="Laden aktiv → Wb2 Cac" Address="" Check="cac=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="&lt;v&gt;" HintText=""/>
 	<VirtualInUdpCmd Title="TWC Cp" Comment="Ladeleistung kW → Wb2 Cp" Address="" Check="cp=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="100" DestValHigh="100" DefVal="0" MinVal="-2147483648" MaxVal="2147483647" Unit="&lt;v.2&gt; kW" HintText=""/>
 	<VirtualInUdpCmd Title="TWC Mr" Comment="Zaehlerstand kWh → Wb2 Mr" Address="" Check="mr=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="100" DestValHigh="100" DefVal="0" MinVal="-2147483648" MaxVal="2147483647" Unit="&lt;v.3&gt; kWh" HintText=""/>
 	<VirtualInUdpCmd Title="TWC Ist-Strom" Comment="Ist-Strom A" Address="" Check=";a=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="100" DestValHigh="100" DefVal="0" MinVal="-2147483648" MaxVal="2147483647" Unit="&lt;v.1&gt; A" HintText=""/>
 	<VirtualInUdpCmd Title="TWC Angeboten" Comment="angebotener Strom A" Address="" Check="offer=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="100" DestValHigh="100" DefVal="0" MinVal="-2147483648" MaxVal="2147483647" Unit="&lt;v&gt; A" HintText=""/>
-	<VirtualInUdpCmd Title="TWC Link" Comment="RS485-Verbindung zum TWC" Address="" Check="link=\v" Signed="true" Analog="false" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="" HintText=""/>
-	<VirtualInUdpCmd Title="TWC Failsafe" Comment="Watchdog abgelaufen" Address="" Check="failsafe=\v" Signed="true" Analog="false" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="" HintText=""/>
+	<VirtualInUdpCmd Title="TWC Link" Comment="RS485-Verbindung zum TWC" Address="" Check="link=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="&lt;v&gt;" HintText=""/>
+	<VirtualInUdpCmd Title="TWC Failsafe" Comment="Watchdog abgelaufen" Address="" Check="failsafe=\v" Signed="true" Analog="true" SourceValLow="0" DestValLow="0" SourceValHigh="1" DestValHigh="1" DefVal="0" MinVal="0" MaxVal="1" Unit="&lt;v&gt;" HintText=""/>
 </VirtualInUdp>
