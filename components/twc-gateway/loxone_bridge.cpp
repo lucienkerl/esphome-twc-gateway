@@ -97,26 +97,29 @@ std::string encode_path_segment(const std::string &in) {
 // all but the first are matched with their leading ';' so that e.g. "a="
 // can never hit "ca=" or "cac=".
 std::string build_udp_template(const std::string &sender_ip, uint16_t port) {
+  // Every command is analog, also the 0/1 ones: a digital Virtual UDP
+  // Input Command only pulses when its text is recognised, it doesn't hold
+  // the value - Vc and Cac would drop back to 0 right away. An analog 0/1
+  // wired to a digital block input holds it.
   struct Cmd {
     const char *title;
     const char *check;
-    bool analog;
     const char *unit;
   };
   static const Cmd CMDS[] = {
-      {"TWC Vc", "vc=\\v", false, ""},
-      {"TWC Cac", ";cac=\\v", false, ""},
-      {"TWC Cp", ";cp=\\v", true, "&lt;v.2&gt; kW"},
-      {"TWC Mr", ";mr=\\v", true, "&lt;v.3&gt; kWh"},
-      {"TWC Actual Current", ";a=\\v", true, "&lt;v.2&gt; A"},
-      {"TWC Offered Current", ";offer=\\v", true, "&lt;v&gt; A"},
-      {"TWC Reported Limit", ";twc=\\v", true, "&lt;v.2&gt; A"},
-      {"TWC Requested Current", ";set=\\v", true, "&lt;v&gt; A"},
-      {"TWC Charging Allowed", ";ca=\\v", false, ""},
-      {"TWC Vehicle State", ";st=\\v", true, "&lt;v&gt;"},
-      {"TWC Plug State", ";ps=\\v", true, "&lt;v&gt;"},
-      {"TWC Link", ";link=\\v", false, ""},
-      {"TWC Failsafe", ";failsafe=\\v", false, ""},
+      {"TWC Vc", "vc=\\v", "&lt;v&gt;"},
+      {"TWC Cac", ";cac=\\v", "&lt;v&gt;"},
+      {"TWC Cp", ";cp=\\v", "&lt;v.2&gt; kW"},
+      {"TWC Mr", ";mr=\\v", "&lt;v.3&gt; kWh"},
+      {"TWC Actual Current", ";a=\\v", "&lt;v.2&gt; A"},
+      {"TWC Offered Current", ";offer=\\v", "&lt;v&gt; A"},
+      {"TWC Reported Limit", ";twc=\\v", "&lt;v.2&gt; A"},
+      {"TWC Requested Current", ";set=\\v", "&lt;v&gt; A"},
+      {"TWC Charging Allowed", ";ca=\\v", "&lt;v&gt;"},
+      {"TWC Vehicle State", ";st=\\v", "&lt;v&gt;"},
+      {"TWC Plug State", ";ps=\\v", "&lt;v&gt;"},
+      {"TWC Link", ";link=\\v", "&lt;v&gt;"},
+      {"TWC Failsafe", ";failsafe=\\v", "&lt;v&gt;"},
   };
   std::string xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n";
   char buf[320];
@@ -128,9 +131,9 @@ std::string build_udp_template(const std::string &sender_ip, uint16_t port) {
   for (const auto &c : CMDS) {
     snprintf(buf, sizeof(buf),
              "\t<VirtualInUdpCmd Title=\"%s\" Comment=\"\" Address=\"\" Check=\"%s\" Signed=\"true\" "
-             "Analog=\"%s\" SourceValLow=\"0\" DestValLow=\"0\" SourceValHigh=\"100\" DestValHigh=\"100\" "
+             "Analog=\"true\" SourceValLow=\"0\" DestValLow=\"0\" SourceValHigh=\"100\" DestValHigh=\"100\" "
              "DefVal=\"0\" MinVal=\"-2147483648\" MaxVal=\"2147483647\" Unit=\"%s\" HintText=\"\"/>\r\n",
-             c.title, c.check, c.analog ? "true" : "false", c.unit);
+             c.title, c.check, c.unit);
     xml += buf;
   }
   xml += "</VirtualInUdp>\r\n";
